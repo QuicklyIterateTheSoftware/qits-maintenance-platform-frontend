@@ -1,0 +1,35 @@
+/* What this page adds to the shared page furniture: the fact list, and the note a failed poll
+   leaves behind. */
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3rem 1rem;
+  margin: 0.5rem 0 1rem;
+  align-items: baseline;
+}
+
+.facts dt {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.facts a {
+  color: #4338ca;
+}
+
+h2 {
+  margin: 1.5rem 0 0.35rem;
+  font-size: 1rem;
+}
+
+.stale {
+  margin: 0.5rem 0;
+  color: #b45309;
+  font-size: 0.9rem;
+}

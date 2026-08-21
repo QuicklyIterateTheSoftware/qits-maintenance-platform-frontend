@@ -1,0 +1,134 @@
+<header class="head">
+  <h1>Maintenance</h1>
+  <div class="actions">
+    <qits-button [busy]="scanning()" (pressed)="scan('INTERNAL')">Scan internal</qits-button>
+    <qits-button variant="secondary" [busy]="scanning()" (pressed)="scan('EXTERNAL')"
+      >Scan external</qits-button
+    >
+  </div>
+</header>
+<p class="lede">
+  What every repository in the catalog pins, and what the registries have released since. Internal
+  is the qits registries; external is the mirror.
+</p>
+
+@if (scanNote(); as note) {
+  <p class="page-note" role="status">{{ note }}</p>
+}
+
+@if (pollProblem(); as problem) {
+  <p class="stale" role="status">
+    The last update did not arrive — {{ problem }}. This is the catalog as it was last read.
+  </p>
+}
+
+<app-async
+  [state]="reposState()"
+  loadingLabel="Loading the repositories"
+  errorLabel="Could not load the repositories"
+  (retry)="loadRepositories()"
+/>
+
+@if (reposState().kind === 'ready') {
+  @if (repositories().length === 0) {
+    <app-empty
+      message="No repository has been scanned yet. Scan internal reads every manifest in the catalog; until it has run there is nothing to be behind on."
+    />
+  } @else {
+    <div class="scroll">
+      <table>
+        <caption>
+          {{
+            caption()
+          }}, {{
+            totalPending()
+          }}
+          pins behind across all of them.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Repository</th>
+            <th scope="col">Last scan</th>
+            <th scope="col">Status</th>
+            <th scope="col" class="num">Pending</th>
+            <th scope="col">Groups</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (repository of repositories(); track repository.name) {
+            <tr [class.row-pending]="repository.pending > 0">
+              <td>
+                <a [routerLink]="['/repositories', repository.name]">{{ repository.name }}</a>
+              </td>
+              <td [attr.title]="instant(repository.lastScanAt)" class="subtle">
+                {{ ago(repository.lastScanAt) }}
+              </td>
+              <td>
+                <!-- The message is the whole explanation of an UNREACHABLE or a CONFIG_ERROR, and
+                     it is a sentence rather than a word, so it rides in the title of the badge
+                     instead of widening every row that does not need it. -->
+                <span [attr.title]="repository.message">
+                  <app-status-badge [status]="repository.status" />
+                </span>
+              </td>
+              <td class="num">{{ repository.pending }}</td>
+              <td><app-group-chips [groups]="repository.groups" /></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+}
+
+<h2>Recent bumps</h2>
+
+<app-async
+  [state]="bumpsState()"
+  loadingLabel="Loading the bumps"
+  errorLabel="Could not load the bumps"
+  (retry)="loadBumps()"
+/>
+
+@if (bumpsState().kind === 'ready') {
+  @if (bumps().length === 0) {
+    <app-empty
+      message="Nothing has been bumped here yet. A branch is created by the schedule, or by the button on a repository."
+    />
+  } @else {
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Status</th>
+            <th scope="col">Repository</th>
+            <th scope="col">Group</th>
+            <th scope="col">Started</th>
+            <th scope="col">Trigger</th>
+            <th scope="col">Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (bump of bumps(); track bump.id) {
+            <tr>
+              <td>
+                <a [routerLink]="['/bumps', bump.id]"
+                  ><app-status-badge [status]="bump.status"
+                /></a>
+              </td>
+              <td>
+                <a [routerLink]="['/repositories', bump.repository]">{{ bump.repository }}</a>
+              </td>
+              <td class="mono">{{ bump.group }}</td>
+              <td [attr.title]="instant(bump.startedAt)" class="subtle">
+                {{ ago(bump.startedAt) }}
+              </td>
+              <td>{{ bump.trigger }}</td>
+              <td class="value">{{ bump.message || none }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+}

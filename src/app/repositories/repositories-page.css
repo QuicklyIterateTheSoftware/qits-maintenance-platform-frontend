@@ -1,0 +1,39 @@
+/* What the overview adds to the shared page furniture: the two scan buttons in the heading, the
+   note a scan leaves behind, and the tint on a row with something waiting. */
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+h2 {
+  margin: 1.5rem 0 0.35rem;
+  font-size: 1rem;
+}
+
+/* Not an error: a scan being accepted, followed, or given up on is ordinary news. */
+.page-note {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.375rem;
+  color: #1e3a8a;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+/* A poll that did not answer leaves the last good listing on screen and says so here. */
+.stale {
+  margin: 0.5rem 0;
+  color: #b45309;
+  font-size: 0.9rem;
+}
+
+/* A repository with something waiting is the reason to read this table, so it is the row that
+   stands out. The tint is the same one the pending chips use. */
+.row-pending td {
+  background: #fffbeb;
+}
+
+.row-pending td:first-child a {
+  font-weight: 600;
+}

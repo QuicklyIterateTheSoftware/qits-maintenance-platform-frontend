@@ -1,0 +1,54 @@
+/* What this page adds to the shared page furniture: the search box, and one block per dependency. */
+
+.search {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0 0 1rem;
+}
+
+.search input {
+  font: inherit;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  min-width: min(24rem, 100%);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dependency {
+  margin: 1.25rem 0;
+}
+
+.dependency h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.latest {
+  color: #166534;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+/* A repository holding something other than the latest is the answer the page was opened for. */
+.row-behind td {
+  background: #fffbeb;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
