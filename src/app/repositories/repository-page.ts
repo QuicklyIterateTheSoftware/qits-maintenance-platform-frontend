@@ -13,6 +13,7 @@ import { ActivatedRoute, convertToParamMap, RouterLink } from '@angular/router';
 import { QitsButton, QitsCard } from '@qits/ui-components';
 import { MaintenanceApi } from '../api/maintenance-api';
 import {
+  changeCount,
   isBumpTerminal,
   type BumpDto,
   type GroupDto,
@@ -128,6 +129,11 @@ export class RepositoryPage {
     });
 
     inject(DestroyRef).onDestroy(() => this.stopPoll());
+  }
+
+  /** A listing row may arrive without its changes, so the count is read rather than assumed. */
+  protected changes(bump: BumpDto): number {
+    return changeCount(bump);
   }
 
   protected instant(iso: string | null): string {

@@ -155,7 +155,7 @@
                 {{ ago(bump.startedAt) }}
               </td>
               <td>{{ bump.trigger }}</td>
-              <td class="num">{{ bump.changes.length }}</td>
+              <td class="num">{{ changes(bump) }}</td>
               <td class="value">{{ bump.message || none }}</td>
             </tr>
           }

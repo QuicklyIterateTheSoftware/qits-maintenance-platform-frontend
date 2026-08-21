@@ -103,6 +103,9 @@ export interface BumpChangeDto {
  *
  * `branch` is optional because the contract's row does not name it — the bump page falls back to
  * `maintenance/<group>`, which is the branch the service derives from the group anyway.
+ *
+ * `changes` is optional for a duller reason: the listing may leave it out to keep its rows small,
+ * and a page that counted it blind would break on the day it does. `changeCount` is that count.
  */
 export interface BumpDto {
   readonly id: string;
@@ -114,7 +117,7 @@ export interface BumpDto {
   readonly ciEventId: string | null;
   readonly ciRunId: string | null;
   readonly status: BumpStatus;
-  readonly changes: readonly BumpChangeDto[];
+  readonly changes?: readonly BumpChangeDto[];
   readonly startedAt: string | null;
   readonly finishedAt: string | null;
   readonly message: string | null;
@@ -128,6 +131,11 @@ export interface AcceptedDto {
 /** A bump that has stopped. Only the other two are worth polling. */
 export function isBumpTerminal(status: BumpStatus): boolean {
   return status !== 'REQUESTED' && status !== 'RUNNING';
+}
+
+/** How many pins a bump moves — zero for a row the listing sent without its changes. */
+export function changeCount(bump: BumpDto): number {
+  return bump.changes?.length ?? 0;
 }
 
 /** The branch a bump is about — the row's own, or the one its group's name implies. */
