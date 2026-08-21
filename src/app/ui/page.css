@@ -1,0 +1,131 @@
+/* The furniture every page in this app shares: a heading block, a data table, a note. Pulled into
+   each page component through `styleUrls` rather than into the global stylesheet, so it stays
+   scoped by Angular's emulated encapsulation and a page can still override a rule locally.
+
+   It is the sheet every sibling explorer carries, with one rule this application needs more than
+   they do: `.value`. A cell here holds a step summary or a request URL — occasionally something
+   very long — and nowrap would push the columns after it off the screen while wrapping mid-token
+   would make a path unreadable. `.value` wraps, but only where wrapping is safe. */
+
+:host {
+  display: block;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.head h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  overflow-wrap: anywhere;
+}
+
+.lede {
+  margin: 0.15rem 0 1rem;
+  color: #6b7280;
+}
+
+.crumbs {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.crumbs a {
+  color: #4338ca;
+}
+
+.crumbs .sep {
+  padding: 0 0.35rem;
+  color: #9ca3af;
+}
+
+.page-error {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.375rem;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+/* Tables scroll rather than squeeze: a key or a timestamp that wrapped mid-token would be
+   unreadable, and these tables are the page. */
+.scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+caption {
+  text-align: left;
+  padding: 0 0 0.4rem;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+thead th {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+/* Right-aligned numbers. */
+.num {
+  text-align: right;
+  padding-right: 1.25rem;
+}
+
+td a {
+  color: #4338ca;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+.subtle {
+  color: #6b7280;
+}
+
+/* A long value — a step summary, a request URL: as long as it is, wrapped where wrapping is safe,
+   and never truncated. `overflow-wrap: anywhere` is what stops a 400-character path from widening
+   the table past the viewport, and the max-width keeps the columns after it where the eye expects
+   them. Nothing here clips: a value half-shown is a value misread. */
+.value {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 30rem;
+  min-width: 12rem;
+}
+
+.note {
+  margin: 0.75rem 0 0;
+  color: #6b7280;
+  font-size: 0.88rem;
+}
