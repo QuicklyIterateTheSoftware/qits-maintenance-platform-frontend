@@ -1,0 +1,87 @@
+<header class="head">
+  <h1>Dependencies</h1>
+</header>
+<p class="lede">
+  Who pins what, across every repository in the catalog. The name is a glob — <code>@qits/*</code>,
+  <code>eu.wohlben.qits:qits-eventstream</code>, <code>io.quarkus:*</code>.
+</p>
+
+<form class="search" (submit)="submit($event)">
+  <label class="sr-only" for="dependency-name">Dependency name</label>
+  <input
+    id="dependency-name"
+    name="name"
+    type="search"
+    autocomplete="off"
+    placeholder="@qits/*"
+    [value]="draft()"
+    (input)="onInput($event)"
+  />
+  <qits-button type="submit">Search</qits-button>
+</form>
+
+<app-async
+  [state]="state()"
+  loadingLabel="Searching the pins"
+  errorLabel="Could not search the pins"
+  (retry)="load()"
+/>
+
+@if (state().kind === 'idle') {
+  <app-empty
+    message="Type a dependency name to see who pins it. Nothing is listed until something is asked for — every pin on the platform is thousands of rows and nobody’s question."
+  />
+}
+
+@if (state().kind === 'ready') {
+  @if (dependencies().length === 0) {
+    <app-empty
+      message="No dependency in the inventory matches that name. A repository is only in the inventory once it has been scanned."
+    />
+  } @else {
+    <p class="note">{{ caption() }} matching “{{ term() }}”.</p>
+    @for (dependency of dependencies(); track dependency.ecosystem + '|' + dependency.name) {
+      <section class="dependency">
+        <h2>
+          <span class="mono">{{ dependency.name }}</span>
+          <span class="subtle">{{ dependency.ecosystem }}</span>
+          <span class="latest">latest {{ dependency.latest || none }}</span>
+        </h2>
+        @if (dependency.pins.length === 0) {
+          <app-empty message="Nothing pins this." />
+        } @else {
+          <div class="scroll">
+            <table>
+              <caption>
+                {{ dependency.pins.length }} pinning it.
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Repository</th>
+                  <th scope="col">Version</th>
+                  <th scope="col">Manifest</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (pin of dependency.pins; track pin.repository + '|' + pin.manifestPath) {
+                  <tr [class.row-behind]="behind(pin.version, dependency.latest)">
+                    <td>
+                      <a [routerLink]="['/repositories', pin.repository]">{{ pin.repository }}</a>
+                    </td>
+                    <td class="mono">
+                      {{ pin.version }}
+                      @if (behind(pin.version, dependency.latest)) {
+                        <span class="subtle">not latest</span>
+                      }
+                    </td>
+                    <td class="mono">{{ pin.manifestPath }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+    }
+  }
+}

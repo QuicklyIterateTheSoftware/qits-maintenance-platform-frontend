@@ -1,0 +1,166 @@
+<p class="crumbs"><a routerLink="/">Repositories</a><span class="sep">/</span>{{ name() }}</p>
+
+<header class="head">
+  <h1>{{ name() }}</h1>
+  @if (detail(); as repository) {
+    <p class="facts">
+      <span [attr.title]="repository.message"
+        ><app-status-badge [status]="repository.status"
+      /></span>
+      <span class="subtle" [attr.title]="instant(repository.lastScanAt)"
+        >scanned {{ ago(repository.lastScanAt) }}</span
+      >
+    </p>
+  }
+</header>
+
+@if (detail(); as repository) {
+  @if (repository.message) {
+    <p class="page-error" role="alert">{{ repository.message }}</p>
+  }
+}
+
+@if (bumpNote(); as note) {
+  <p class="page-note" role="status">{{ note }}</p>
+}
+
+@if (pollProblem(); as problem) {
+  <p class="stale" role="status">
+    The last update did not arrive — {{ problem }}. This is the repository as it was last read.
+  </p>
+}
+
+<app-async
+  [state]="detailState()"
+  loadingLabel="Loading the repository"
+  errorLabel="Could not load the repository"
+  (retry)="loadDetail()"
+/>
+
+<h2>Groups</h2>
+
+@if (detailState().kind === 'ready') {
+  @if (panels().length === 0) {
+    <app-empty
+      message="This repository has no groups. A repository with no .config/qits/maintenance.yml still gets one — dependencies — so an empty list means the scan never got that far."
+    />
+  } @else {
+    <div class="panels">
+      @for (panel of panels(); track panel.group.name) {
+        <qits-card [heading]="panel.group.name" [subheading]="panel.group.branch">
+          <div qitsCardActions>
+            <qits-button
+              size="sm"
+              [busy]="bumping() === panel.group.name"
+              [disabled]="panel.busy"
+              (pressed)="bump(panel.group.name)"
+              >Create branch now</qits-button
+            >
+          </div>
+          <p class="panel-facts">
+            <app-status-badge [status]="panel.group.state" />
+            <span>{{ panel.group.pending }} pending</span>
+            @if (panel.activeBumpId; as bumpId) {
+              <a [routerLink]="['/bumps', bumpId]">a bump is running</a>
+            }
+          </p>
+        </qits-card>
+      }
+    </div>
+  }
+}
+
+<h2>Pins</h2>
+
+@if (detailState().kind === 'ready') {
+  @if (pins().length === 0) {
+    <app-empty
+      message="No pins were read here. Either the manifests hold none, or the last scan could not read them — the status above says which."
+    />
+  } @else {
+    <div class="scroll">
+      <table>
+        <caption>
+          {{
+            caption()
+          }}
+          A pin is behind when the service says so, never when this page compares two strings.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Manifest</th>
+            <th scope="col">Ecosystem</th>
+            <th scope="col">Dependency</th>
+            <th scope="col">Version</th>
+            <th scope="col">Latest</th>
+            <th scope="col">Kind</th>
+            <th scope="col">Group</th>
+            <th scope="col">Location</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (pin of pins(); track pin.manifestPath + '|' + pin.name + '|' + pin.location) {
+            <tr [class.row-pending]="pin.pending">
+              <td class="mono">{{ pin.manifestPath }}</td>
+              <td>{{ pin.ecosystem }}</td>
+              <td class="mono value">{{ pin.name }}</td>
+              <td class="mono" [attr.title]="pin.range">{{ pin.version }}</td>
+              <td class="mono">{{ pin.latest || none }}</td>
+              <td>{{ pin.kind }}</td>
+              <td class="mono">{{ pin.group }}</td>
+              <td class="mono subtle">{{ pin.location }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+}
+
+<h2>Recent bumps</h2>
+
+<app-async
+  [state]="bumpsState()"
+  loadingLabel="Loading the bumps"
+  errorLabel="Could not load the bumps"
+  (retry)="loadBumps()"
+/>
+
+@if (bumpsState().kind === 'ready') {
+  @if (bumps().length === 0) {
+    <app-empty message="Nothing has been bumped for this repository yet." />
+  } @else {
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Status</th>
+            <th scope="col">Group</th>
+            <th scope="col">Started</th>
+            <th scope="col">Trigger</th>
+            <th scope="col" class="num">Changes</th>
+            <th scope="col">Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (bump of bumps(); track bump.id) {
+            <tr>
+              <td>
+                <a [routerLink]="['/bumps', bump.id]"
+                  ><app-status-badge [status]="bump.status"
+                /></a>
+              </td>
+              <td class="mono">{{ bump.group }}</td>
+              <td [attr.title]="instant(bump.startedAt)" class="subtle">
+                {{ ago(bump.startedAt) }}
+              </td>
+              <td>{{ bump.trigger }}</td>
+              <td class="num">{{ changes(bump) }}</td>
+              <td class="value">{{ bump.message || none }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+}

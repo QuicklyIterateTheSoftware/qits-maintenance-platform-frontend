@@ -1,0 +1,113 @@
+<p class="crumbs">
+  <a routerLink="/">Repositories</a>
+  @if (bump(); as current) {
+    <span class="sep">/</span>
+    <a [routerLink]="['/repositories', current.repository]">{{ current.repository }}</a>
+  }
+  <span class="sep">/</span>bump
+</p>
+
+<header class="head">
+  <h1>Bump {{ id() }}</h1>
+</header>
+
+<app-async
+  [state]="state()"
+  loadingLabel="Loading the bump"
+  errorLabel="Could not load the bump"
+  (retry)="load()"
+/>
+
+@if (pollProblem(); as problem) {
+  <p class="stale" role="status">
+    The last update did not arrive — {{ problem }}. This is the bump as it was last read.
+  </p>
+}
+
+@if (bump(); as current) {
+  <dl class="facts">
+    <dt>Status</dt>
+    <dd><app-status-badge [status]="current.status" /></dd>
+
+    <dt>Repository</dt>
+    <dd>
+      <a [routerLink]="['/repositories', current.repository]">{{ current.repository }}</a>
+    </dd>
+
+    <dt>Group</dt>
+    <dd class="mono">{{ current.group }}</dd>
+
+    <dt>Branch</dt>
+    <dd class="mono">{{ branch() }}</dd>
+
+    <dt>Trigger</dt>
+    <dd>{{ current.trigger }}</dd>
+
+    <dt>Environment</dt>
+    <dd>{{ current.environment || none }}</dd>
+
+    <dt>Started</dt>
+    <dd>{{ instant(current.startedAt) }}</dd>
+
+    <dt>Finished</dt>
+    <dd>{{ instant(current.finishedAt) }} <span class="subtle">({{ duration() }})</span></dd>
+
+    <dt>CI event</dt>
+    <dd class="mono">{{ current.ciEventId || none }}</dd>
+
+    <dt>CI run</dt>
+    <dd>
+      @if (ciRunHref(); as href) {
+        <!-- qits-ci is a different application at a different base path, so this is an href and
+             never a router link. -->
+        <a [href]="href" class="mono">{{ current.ciRunId }}</a>
+      } @else {
+        {{ none }}
+      }
+    </dd>
+  </dl>
+
+  @if (current.message) {
+    <p class="page-error" role="alert">{{ current.message }}</p>
+  }
+
+  <h2>Changes sent</h2>
+
+  @if (changes().length === 0) {
+    <app-empty
+      message="This bump sent no changes. NOTHING_TO_DO is what that looks like when the group had caught up before the branch was written."
+    />
+  } @else {
+    <div class="scroll">
+      <table>
+        <caption>
+          {{
+            caption()
+          }}, exactly as they were handed to qits-ci.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Ecosystem</th>
+            <th scope="col">Manifest</th>
+            <th scope="col">Dependency</th>
+            <th scope="col">From</th>
+            <th scope="col">To</th>
+            <th scope="col">Location</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (change of changes(); track change.manifestPath + '|' + change.name) {
+            <tr>
+              <td>{{ change.ecosystem }}</td>
+              <td class="mono">{{ change.manifestPath }}</td>
+              <td class="mono value">{{ change.name }}</td>
+              <td class="mono">{{ change.from }}</td>
+              <td class="mono">{{ change.to }}</td>
+              <td class="mono subtle">{{ change.location }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+}
