@@ -1,12 +1,27 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
+import { QITS_SCOPE, scopeCommands, scopePath } from '@qits/ui-components';
 import { filter, map } from 'rxjs';
 
-/** The two views of one inventory, in the order a reader meets them. */
+/**
+ * The two views of one inventory, in the order a reader meets them.
+ *
+ * `segment` is the path *inside* the scope, not the whole address: under `/qits/dependencies` the
+ * project slug is the chrome's business, and this menu is still choosing between the same two
+ * views. `commands` is built from the scope on screen, so a click keeps the reader in it.
+ */
 const ENTRIES = [
-  { path: '/', label: 'Repositories', matches: (segments: readonly string[]) => segments[0] !== 'dependencies' },
-  { path: '/dependencies', label: 'Dependencies', matches: (segments: readonly string[]) => segments[0] === 'dependencies' },
+  {
+    segment: '',
+    label: 'Repositories',
+    matches: (segments: readonly string[]) => segments[0] !== 'dependencies',
+  },
+  {
+    segment: 'dependencies',
+    label: 'Dependencies',
+    matches: (segments: readonly string[]) => segments[0] === 'dependencies',
+  },
 ] as const;
 
 /**
@@ -32,9 +47,9 @@ const ENTRIES = [
   imports: [RouterLink],
   template: `
     <nav aria-label="Maintenance views">
-      @for (entry of entries(); track entry.path) {
+      @for (entry of entries(); track entry.label) {
         <a
-          [routerLink]="entry.path"
+          [routerLink]="entry.commands"
           [class.current]="entry.current"
           [attr.aria-current]="entry.current ? 'page' : null"
           >{{ entry.label }}</a
@@ -76,6 +91,12 @@ export class MaintenanceNav {
   private readonly router = inject(Router);
 
   /**
+   * The scope the address states. Optional: a spec that renders this menu alone gets the unscoped
+   * answer, which is what the menu shows at the root of this host.
+   */
+  private readonly scope = inject(QITS_SCOPE, { optional: true });
+
+  /**
    * The URL, as a signal, because Angular 21.2 has no signal-valued `Router.url` — only a string
    * getter and `currentNavigation`, which is null once a navigation has finished. The seed matters
    * as much as the stream: a reader who lands directly on a deep link gets no `NavigationEnd`
@@ -90,10 +111,15 @@ export class MaintenanceNav {
   );
 
   protected readonly entries = computed(() => {
+    const scope = this.scope?.scope() ?? {};
+    const base = scopePath(scope);
     const path = this.url().split('#')[0].split('?')[0];
-    const segments = path.split('/').filter(Boolean);
+    // What the reader is looking at *inside* the scope. The project slug is the chrome's, so it is
+    // stripped before the match — otherwise every scoped address would read as "Repositories".
+    const inside = path.startsWith(base) ? path.slice(base.length) : path;
+    const segments = inside.split('/').filter(Boolean);
     return ENTRIES.map((entry) => ({
-      path: entry.path,
+      commands: entry.segment ? [...scopeCommands(scope), entry.segment] : scopeCommands(scope),
       label: entry.label,
       current: entry.matches(segments),
     }));

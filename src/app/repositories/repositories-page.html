@@ -7,6 +7,9 @@
     >
   </div>
 </header>
+@if (scoped.name(); as project) {
+  <p class="project-scope">{{ project }}</p>
+}
 <p class="lede">
   What every repository in the catalog pins, and what the registries have released since. Internal
   is the qits registries; external is the mirror.
@@ -40,7 +43,8 @@
         <caption>
           {{
             caption()
-          }}, {{
+          }},
+          {{
             totalPending()
           }}
           pins behind across all of them.
@@ -58,7 +62,9 @@
           @for (repository of repositories(); track repository.name) {
             <tr [class.row-pending]="repository.pending > 0">
               <td>
-                <a [routerLink]="['/repositories', repository.name]">{{ repository.name }}</a>
+                <a [routerLink]="[...scoped.commands(), 'repositories', repository.name]">{{
+                  repository.name
+                }}</a>
               </td>
               <td [attr.title]="instant(repository.lastScanAt)" class="subtle">
                 {{ ago(repository.lastScanAt) }}
@@ -112,12 +118,14 @@
           @for (bump of bumps(); track bump.id) {
             <tr>
               <td>
-                <a [routerLink]="['/bumps', bump.id]"
+                <a [routerLink]="[...scoped.commands(), 'bumps', bump.id]"
                   ><app-status-badge [status]="bump.status"
                 /></a>
               </td>
               <td>
-                <a [routerLink]="['/repositories', bump.repository]">{{ bump.repository }}</a>
+                <a [routerLink]="[...scoped.commands(), 'repositories', bump.repository]">{{
+                  bump.repository
+                }}</a>
               </td>
               <td class="mono">{{ bump.group }}</td>
               <td [attr.title]="instant(bump.startedAt)" class="subtle">

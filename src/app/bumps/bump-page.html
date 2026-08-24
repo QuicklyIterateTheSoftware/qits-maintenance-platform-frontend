@@ -1,8 +1,10 @@
 <p class="crumbs">
-  <a routerLink="/">Repositories</a>
+  <a [routerLink]="scoped.commands()">Repositories</a>
   @if (bump(); as current) {
     <span class="sep">/</span>
-    <a [routerLink]="['/repositories', current.repository]">{{ current.repository }}</a>
+    <a [routerLink]="[...scoped.commands(), 'repositories', current.repository]">{{
+      current.repository
+    }}</a>
   }
   <span class="sep">/</span>bump
 </p>
@@ -10,6 +12,9 @@
 <header class="head">
   <h1>Bump {{ id() }}</h1>
 </header>
+@if (scoped.name(); as project) {
+  <p class="project-scope">{{ project }}</p>
+}
 
 <app-async
   [state]="state()"
@@ -31,7 +36,9 @@
 
     <dt>Repository</dt>
     <dd>
-      <a [routerLink]="['/repositories', current.repository]">{{ current.repository }}</a>
+      <a [routerLink]="[...scoped.commands(), 'repositories', current.repository]">{{
+        current.repository
+      }}</a>
     </dd>
 
     <dt>Group</dt>
@@ -50,7 +57,9 @@
     <dd>{{ instant(current.startedAt) }}</dd>
 
     <dt>Finished</dt>
-    <dd>{{ instant(current.finishedAt) }} <span class="subtle">({{ duration() }})</span></dd>
+    <dd>
+      {{ instant(current.finishedAt) }} <span class="subtle">({{ duration() }})</span>
+    </dd>
 
     <dt>CI event</dt>
     <dd class="mono">{{ current.ciEventId || none }}</dd>

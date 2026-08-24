@@ -105,8 +105,10 @@ describe('App', () => {
     http.verify();
   });
 
-  it('draws an unknown URL under /maintenance/ as a page, still inside the chrome', async () => {
-    const harness = await RouterTestingHarness.create('/nothing-here');
+  it('draws an unknown URL as a page, still inside the chrome', async () => {
+    // Two segments, because one is now the project form: `/nothing-here` is read as a project this
+    // platform does not have, and the repositories page is the honest answer there.
+    const harness = await RouterTestingHarness.create('/nothing/here');
 
     const layout = harness.routeNativeElement as HTMLElement;
     expect(layout.tagName.toLowerCase()).toBe('qits-main-layout');

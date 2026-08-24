@@ -12,6 +12,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, convertToParamMap, RouterLink } from '@angular/router';
 import { QitsButton, QitsCard } from '@qits/ui-components';
 import { MaintenanceApi } from '../api/maintenance-api';
+import { injectScopedProject } from '../nav/scoped-project';
 import {
   changeCount,
   isBumpTerminal,
@@ -58,6 +59,9 @@ interface GroupPanel {
   templateUrl: './repository-page.html',
 })
 export class RepositoryPage {
+  /** The project the address names — what the header says and what every in-app link keeps. */
+  protected readonly scoped = injectScopedProject();
+
   private readonly api = inject(MaintenanceApi);
   private readonly route = inject(ActivatedRoute);
   private readonly scheduler = inject(QITS_SCHEDULER);

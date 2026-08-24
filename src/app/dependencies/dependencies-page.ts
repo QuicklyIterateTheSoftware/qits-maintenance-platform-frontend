@@ -1,8 +1,17 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, convertToParamMap } from '@angular/router';
 import { QitsButton } from '@qits/ui-components';
 import { MaintenanceApi } from '../api/maintenance-api';
+import { injectScopedProject } from '../nav/scoped-project';
 import type { DependencyDto } from '../api/dto';
 import { Async } from '../ui/async';
 import { Empty } from '../ui/empty';
@@ -37,6 +46,9 @@ import { IDLE, LOADING, failed, ready, type Loadable } from '../ui/loadable';
   templateUrl: './dependencies-page.html',
 })
 export class DependenciesPage {
+  /** The project the address names — what the header says and what every in-app link keeps. */
+  protected readonly scoped = injectScopedProject();
+
   private readonly api = inject(MaintenanceApi);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);

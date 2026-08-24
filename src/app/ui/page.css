@@ -30,6 +30,15 @@
   color: #6b7280;
 }
 
+/* The project the address names, under the heading. It says what is in scope; it does not narrow
+   what is drawn, because this inventory is the whole catalog's. */
+.project-scope {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4338ca;
+}
+
 .crumbs {
   margin: 0 0 0.35rem;
   font-size: 0.85rem;
