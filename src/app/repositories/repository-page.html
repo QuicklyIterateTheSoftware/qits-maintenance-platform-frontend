@@ -1,4 +1,6 @@
-<p class="crumbs"><a routerLink="/">Repositories</a><span class="sep">/</span>{{ name() }}</p>
+<p class="crumbs">
+  <a [routerLink]="scoped.commands()">Repositories</a><span class="sep">/</span>{{ name() }}
+</p>
 
 <header class="head">
   <h1>{{ name() }}</h1>
@@ -13,6 +15,9 @@
     </p>
   }
 </header>
+@if (scoped.name(); as project) {
+  <p class="project-scope">{{ project }}</p>
+}
 
 @if (detail(); as repository) {
   @if (repository.message) {
@@ -61,7 +66,7 @@
             <app-status-badge [status]="panel.group.state" />
             <span>{{ panel.group.pending }} pending</span>
             @if (panel.activeBumpId; as bumpId) {
-              <a [routerLink]="['/bumps', bumpId]">a bump is running</a>
+              <a [routerLink]="[...scoped.commands(), 'bumps', bumpId]">a bump is running</a>
             }
           </p>
         </qits-card>
@@ -146,7 +151,7 @@
           @for (bump of bumps(); track bump.id) {
             <tr>
               <td>
-                <a [routerLink]="['/bumps', bump.id]"
+                <a [routerLink]="[...scoped.commands(), 'bumps', bump.id]"
                   ><app-status-badge [status]="bump.status"
                 /></a>
               </td>

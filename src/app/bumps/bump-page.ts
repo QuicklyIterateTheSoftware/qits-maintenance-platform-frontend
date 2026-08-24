@@ -11,6 +11,7 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink, convertToParamMap } from '@angular/router';
 import { MaintenanceApi } from '../api/maintenance-api';
+import { injectScopedProject } from '../nav/scoped-project';
 import { bumpBranch, isBumpTerminal, type BumpDto } from '../api/dto';
 import { Async } from '../ui/async';
 import { Empty } from '../ui/empty';
@@ -46,6 +47,9 @@ export const POLL_INTERVAL_MS = 2000;
   templateUrl: './bump-page.html',
 })
 export class BumpPage {
+  /** The project the address names — what the header says and what every in-app link keeps. */
+  protected readonly scoped = injectScopedProject();
+
   private readonly api = inject(MaintenanceApi);
   private readonly route = inject(ActivatedRoute);
   private readonly scheduler = inject(QITS_SCHEDULER);

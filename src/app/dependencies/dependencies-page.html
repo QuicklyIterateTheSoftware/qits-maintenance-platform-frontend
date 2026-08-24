@@ -1,6 +1,9 @@
 <header class="head">
   <h1>Dependencies</h1>
 </header>
+@if (scoped.name(); as project) {
+  <p class="project-scope">{{ project }}</p>
+}
 <p class="lede">
   Who pins what, across every repository in the catalog. The name is a glob — <code>@qits/*</code>,
   <code>eu.wohlben.qits:qits-eventstream</code>, <code>io.quarkus:*</code>.
@@ -53,7 +56,10 @@
           <div class="scroll">
             <table>
               <caption>
-                {{ dependency.pins.length }} pinning it.
+                {{
+                  dependency.pins.length
+                }}
+                pinning it.
               </caption>
               <thead>
                 <tr>
@@ -66,7 +72,9 @@
                 @for (pin of dependency.pins; track pin.repository + '|' + pin.manifestPath) {
                   <tr [class.row-behind]="behind(pin.version, dependency.latest)">
                     <td>
-                      <a [routerLink]="['/repositories', pin.repository]">{{ pin.repository }}</a>
+                      <a [routerLink]="[...scoped.commands(), 'repositories', pin.repository]">{{
+                        pin.repository
+                      }}</a>
                     </td>
                     <td class="mono">
                       {{ pin.version }}

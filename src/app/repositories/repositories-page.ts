@@ -9,6 +9,7 @@ import {
 import { RouterLink } from '@angular/router';
 import { QitsButton } from '@qits/ui-components';
 import { MaintenanceApi } from '../api/maintenance-api';
+import { injectScopedProject } from '../nav/scoped-project';
 import { isBumpTerminal, type BumpDto, type RepositoryDto, type ScanScope } from '../api/dto';
 import { Async } from '../ui/async';
 import { Empty } from '../ui/empty';
@@ -57,6 +58,9 @@ export const SCAN_POLL_LIMIT = 90;
   templateUrl: './repositories-page.html',
 })
 export class RepositoriesPage {
+  /** The project the address names — what the header says and what every in-app link keeps. */
+  protected readonly scoped = injectScopedProject();
+
   private readonly api = inject(MaintenanceApi);
   private readonly scheduler = inject(QITS_SCHEDULER);
 
@@ -183,10 +187,7 @@ export class RepositoriesPage {
     this.inFlight = true;
     this.scanPolls += 1;
     try {
-      const [repositories, bumps] = await Promise.all([
-        this.api.repositories(),
-        this.api.bumps(),
-      ]);
+      const [repositories, bumps] = await Promise.all([this.api.repositories(), this.api.bumps()]);
       this.reposState.set(ready(repositories));
       this.bumpsState.set(ready(bumps));
       this.pollProblem.set('');

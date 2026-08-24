@@ -2,15 +2,27 @@
 
 The maintenance frontend: what every repository in the catalog pins, what the registries have
 released since, and which maintenance branches are waiting. Served by qits-platform-maintenance at
-`/maintenance/` through Quinoa. Four addresses, all inside the platform chrome.
+the root of `maintenance.<env>.<domain>` through Quinoa. Four addresses, all inside the platform
+chrome, and each of them reachable under a project slug as well.
 
-- **`/maintenance/`** — every repository: last scan, status, how many pins are behind, and its
+- **`/`** — every repository: last scan, status, how many pins are behind, and its
   groups as chips. Two buttons start a scan.
-- **`/maintenance/repositories/<name>`** — the pins, a panel per group with `Create branch now`,
+- **`/repositories/<name>`** — the pins, a panel per group with `Create branch now`,
   and the bumps this repository has had.
-- **`/maintenance/dependencies?name=<glob>`** — who pins what. This is the page that answers "who
+- **`/dependencies?name=<glob>`** — who pins what. This is the page that answers "who
   still pins eventstream 2026.8.x".
-- **`/maintenance/bumps/<id>`** — one bump: the branch, the changes sent, and the CI run.
+- **`/bumps/<id>`** — one bump: the branch, the changes sent, and the CI run.
+
+## The project in the address
+
+This app is **project scoped**: `/qits/dependencies` is the same page as `/dependencies`. The
+literal routes are matched first, so `repositories`, `dependencies` and `bumps` stay this app's own
+pages and never read as projects of those names.
+
+The scope is read from the address by `@qits/ui-components` (`provideQitsScope('project')`), never
+from a route parameter, so one component serves both forms. It is drawn in the page header and
+changes nothing else: this inventory is the whole catalog's, and the service offers no per-project
+query.
 
 ## What the pages decide
 
@@ -63,15 +75,11 @@ Three things the JSON shape alone does not say, and which these pages depend on:
 ## How it is served
 
 qits-platform-maintenance carries this repository as a git submodule at `service/src/main/webui` —
-Quinoa's ui-dir — and builds it during `mvn package`, serving the bundle at `/maintenance/`. The
-segment is spelled here as `baseHref` in `angular.json` and there as `quarkus.quinoa.ui-root-path`;
-the two move together, and a disagreement serves a page whose every asset 404s. Deep links need
-`quarkus.quinoa.enable-spa-routing=true` there; `/maintenance/api` and `/maintenance/q` are held
-back from the SPA by `quarkus.quinoa.ignored-path-prefixes`. This repository ships no container
-image of its own.
-
-Note the known wart, which is every client's alike: bare `/maintenance` (no trailing slash) is a
-404. `/maintenance/` works.
+Quinoa's ui-dir — and builds it during `mvn package`, serving the bundle at the root of its own
+host. `baseHref` here is `/` and `quarkus.quinoa.ui-root-path` there is `/`, so there is no segment
+left for the two to disagree about. Deep links need `quarkus.quinoa.enable-spa-routing=true` there;
+the whole `/maintenance` wire prefix is held back from the SPA by
+`quarkus.quinoa.ignored-path-prefixes`. This repository ships no container image of its own.
 
 ## Development server
 
@@ -79,10 +87,10 @@ Note the known wart, which is every client's alike: bare `/maintenance` (no trai
 ng serve
 ```
 
-Then open `http://localhost:4200/maintenance/`. `proxy.conf.json` forwards `/maintenance/api` and
-`/maintenance/q` to a gateway on `localhost:8080`, because `ng serve` puts no gateway in front. The
-chrome asks the gateway for `/main-navigation`, which `ng serve` does not proxy — so the sidebar
-renders "Navigation unavailable". That is the intended degraded state, not a fault.
+Then open `http://localhost:4200/`. `proxy.conf.json` forwards `/maintenance/api`,
+`/maintenance/q`, `/main-navigation` and `/projects/api` to an edge on `localhost:8080`, because
+`ng serve` puts no edge in front. Without one running the sidebar renders "Navigation unavailable",
+which is the intended degraded state rather than a fault.
 
 ## Running the checks
 

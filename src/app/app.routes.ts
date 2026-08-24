@@ -1,4 +1,4 @@
-import type { Routes } from '@angular/router';
+import type { Route, Routes } from '@angular/router';
 import { QitsMainLayout } from '@qits/ui-components';
 import { NotFound } from './not-found/not-found';
 
@@ -23,34 +23,48 @@ import { NotFound } from './not-found/not-found';
  *
  * **Every one of these is a deep link a reader will paste.** They survive a reload only because
  * qits-platform-maintenance sets `quarkus.quinoa.enable-spa-routing=true`, which answers an unknown
- * path under `/maintenance/` with `index.html` instead of a 404; `/maintenance/api` and
- * `/maintenance/q` are held back from that by `quarkus.quinoa.ignored-path-prefixes`.
+ * path on this host with `index.html` instead of a 404; the whole `/maintenance` wire prefix is
+ * held back from that by `quarkus.quinoa.ignored-path-prefixes`.
  */
+const OWN: Routes = [
+  {
+    path: '',
+    pathMatch: 'full',
+    loadComponent: () => import('./repositories/repositories-page').then((m) => m.RepositoriesPage),
+  },
+  {
+    path: 'repositories/:name',
+    loadComponent: () => import('./repositories/repository-page').then((m) => m.RepositoryPage),
+  },
+  {
+    path: 'dependencies',
+    loadComponent: () => import('./dependencies/dependencies-page').then((m) => m.DependenciesPage),
+  },
+  {
+    path: 'bumps/:id',
+    loadComponent: () => import('./bumps/bump-page').then((m) => m.BumpPage),
+  },
+];
+
+/**
+ * The same four addresses under a project slug — `/qits/dependencies` beside `/dependencies`.
+ *
+ * **Order is the whole guard.** The literal routes above are matched first, so `repositories`,
+ * `dependencies` and `bumps` stay this app's own pages and never read as projects of those names;
+ * only what none of them claim falls through to `:project`. A page never reads this parameter: it
+ * asks `QITS_SCOPE`, which parses the address the same way in both forms, so one component serves
+ * both.
+ *
+ * This app is project scoped and not repository scoped. A repository page here is about a
+ * repository's *pins*, which the inventory keys by name across the whole catalog, so its address
+ * stays `repositories/<name>` rather than becoming the platform's `<category>/<repo>` form.
+ */
+const SCOPED: Route = { path: ':project', children: OWN };
+
 export const routes: Routes = [
   {
     path: '',
     component: QitsMainLayout,
-    children: [
-      {
-        path: '',
-        pathMatch: 'full',
-        loadComponent: () =>
-          import('./repositories/repositories-page').then((m) => m.RepositoriesPage),
-      },
-      {
-        path: 'repositories/:name',
-        loadComponent: () => import('./repositories/repository-page').then((m) => m.RepositoryPage),
-      },
-      {
-        path: 'dependencies',
-        loadComponent: () =>
-          import('./dependencies/dependencies-page').then((m) => m.DependenciesPage),
-      },
-      {
-        path: 'bumps/:id',
-        loadComponent: () => import('./bumps/bump-page').then((m) => m.BumpPage),
-      },
-      { path: '**', component: NotFound },
-    ],
+    children: [...OWN, SCOPED, { path: '**', component: NotFound }],
   },
 ];
