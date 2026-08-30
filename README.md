@@ -1,4 +1,4 @@
-# QitsPlatformSpaMaintenance
+# qits-maintenance-platform-frontend
 
 The maintenance frontend: what every repository in the catalog pins, what the registries have
 released since, and which maintenance branches are waiting. Served by qits-platform-maintenance at
@@ -74,9 +74,9 @@ Three things the JSON shape alone does not say, and which these pages depend on:
 
 ## How it is served
 
-qits-platform-maintenance carries this repository as a git submodule at `service/src/main/webui` —
-Quinoa's ui-dir — and builds it during `mvn package`, serving the bundle at the root of its own
-host. `baseHref` here is `/` and `quarkus.quinoa.ui-root-path` there is `/`, so there is no segment
+qits-maintenance-platform-service — the repository behind the qits-platform-maintenance application
+— carries this repository as a git submodule at `service/src/main/webui` — Quinoa's ui-dir — and
+builds it during `mvn package`, serving the bundle at the root of its own host. `baseHref` here is `/` and `quarkus.quinoa.ui-root-path` there is `/`, so there is no segment
 left for the two to disagree about. Deep links need `quarkus.quinoa.enable-spa-routing=true` there;
 the whole `/maintenance` wire prefix is held back from the SPA by
 `quarkus.quinoa.ignored-path-prefixes`. This repository ships no container image of its own.
