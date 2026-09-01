@@ -1,0 +1,9 @@
+/* What the dependents table adds to the shared page furniture: one word, greyed.
+
+   No amber anywhere here. A dependent on an older version is not work waiting on this page — there
+   is no branch to write and no pin to move; somebody else's repository has to release. The badge in
+   the last column is the whole verdict, and the row stays quiet. */
+
+.transitive {
+  color: #9ca3af;
+}

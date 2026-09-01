@@ -5,37 +5,66 @@ import { QITS_SCOPE, scopeCommands, scopePath } from '@qits/ui-components';
 import { filter, map } from 'rxjs';
 
 /**
- * The two views of one inventory, in the order a reader meets them.
+ * The four views, in the order a reader meets them: two sections, two views each.
  *
- * `segment` is the path *inside* the scope, not the whole address: under `/qits/dependencies` the
- * project slug is the chrome's business, and this menu is still choosing between the same two
- * views. `commands` is built from the scope on screen, so a click keeps the reader in it.
+ * `segment` is the path *inside* the scope, not the whole address: under `/qits/internal` the
+ * project slug is the chrome's business, and this menu is still choosing between the same four
+ * views. It doubles as each entry's key, which is what `selected()` below answers with. `commands`
+ * is built from the scope on screen, so a click keeps the reader in it.
  */
-const ENTRIES = [
+const SECTIONS = [
   {
-    segment: '',
-    label: 'Repositories',
-    matches: (segments: readonly string[]) => segments[0] !== 'dependencies',
+    heading: 'Internal',
+    entries: [
+      { segment: 'internal', label: 'Repositories' },
+      { segment: 'internal/dependencies', label: 'Dependencies' },
+    ],
   },
   {
-    segment: 'dependencies',
-    label: 'Dependencies',
-    matches: (segments: readonly string[]) => segments[0] === 'dependencies',
+    heading: 'External',
+    entries: [
+      { segment: 'external', label: 'Repositories' },
+      { segment: 'external/dependencies', label: 'Dependencies' },
+    ],
   },
 ] as const;
 
 /**
+ * Which entry the address on screen belongs to, as that entry's own segment.
+ *
+ * **A repository page and a bump page are internal.** Neither is an entry — both are reached by
+ * following a link — and neither names a section: a repository's page shows both halves of what it
+ * pins, and a bump belongs to a group rather than to a section. They still have to leave *some*
+ * entry lit, and it is Internal › Repositories: that listing is the front door, it is the only
+ * place a reader arrives at a repository from inside this app, and it is where "back" means
+ * something. Marking nothing would read as a fault; marking External would be a lie.
+ *
+ * The bare root and the legacy `/dependencies` both answer with the entry their redirect is heading
+ * for, because this menu renders once before the redirect has landed and must not flicker.
+ */
+function selected(segments: readonly string[]): string {
+  const [first, second] = segments;
+  if (first === 'external') {
+    return second === 'dependencies' ? 'external/dependencies' : 'external';
+  }
+  if (first === 'dependencies' || (first === 'internal' && second === 'dependencies')) {
+    return 'internal/dependencies';
+  }
+  return 'internal';
+}
+
+/**
  * This application's own menu, under its entry in the platform navigation.
  *
- * <p>Two entries, because there are two ways into one inventory: by repository — "what is this repo
- * behind on" — and by dependency — "who still pins this". A repository page and a bump page are
- * reached from the first, so neither is an entry of its own; the pill above the menu still shows
- * `Repositories` while a reader is inside one, which is where they are.
+ * <p>Two labelled sections, two entries each, because there are two inventories and two ways into
+ * each of them: by repository — "what is this repo behind on" — and by dependency — "who still pins
+ * this", or for the internal side "what still ships an old copy of this". The section is the first
+ * choice a reader makes, so it is a heading rather than a fifth link.
  *
  * <p>The selection is derived from the router rather than held here: a reader arriving on a deep
  * link, or pressing back, must leave the menu showing the view actually on screen. That is also why
- * the match is a function of the URL and not `routerLinkActive` — `/` would otherwise be active on
- * every page, since every path starts with it.
+ * the match is a function of the URL and not `routerLinkActive` — a prefix match would light
+ * `internal` on `internal/dependencies` as well.
  *
  * <p>Declared by the shell, not by a page: `RouterOutlet` destroys the outgoing component after
  * creating the incoming one, so a declaration inside a page would be torn down and rebuilt on every
@@ -47,13 +76,16 @@ const ENTRIES = [
   imports: [RouterLink],
   template: `
     <nav aria-label="Maintenance views">
-      @for (entry of entries(); track entry.label) {
-        <a
-          [routerLink]="entry.commands"
-          [class.current]="entry.current"
-          [attr.aria-current]="entry.current ? 'page' : null"
-          >{{ entry.label }}</a
-        >
+      @for (section of sections(); track section.heading) {
+        <p class="section">{{ section.heading }}</p>
+        @for (entry of section.entries; track entry.label) {
+          <a
+            [routerLink]="entry.commands"
+            [class.current]="entry.current"
+            [attr.aria-current]="entry.current ? 'page' : null"
+            >{{ entry.label }}</a
+          >
+        }
       }
     </nav>
   `,
@@ -69,6 +101,20 @@ const ENTRIES = [
       display: flex;
       flex-direction: column;
       gap: 2px;
+    }
+    /* The section a group of links belongs to. Not a link itself: there is no page for "Internal"
+       as such, and a heading that navigated would be one more thing to press by accident. */
+    .section {
+      margin: 8px 0 2px;
+      padding: 0 10px;
+      color: #9ca3af;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .section:first-child {
+      margin-top: 0;
     }
     a {
       padding: 4px 10px;
@@ -110,18 +156,21 @@ export class MaintenanceNav {
     { initialValue: this.router.url },
   );
 
-  protected readonly entries = computed(() => {
+  protected readonly sections = computed(() => {
     const scope = this.scope?.scope() ?? {};
     const base = scopePath(scope);
     const path = this.url().split('#')[0].split('?')[0];
     // What the reader is looking at *inside* the scope. The project slug is the chrome's, so it is
-    // stripped before the match — otherwise every scoped address would read as "Repositories".
+    // stripped before the match — otherwise every scoped address would read as the root's entry.
     const inside = path.startsWith(base) ? path.slice(base.length) : path;
-    const segments = inside.split('/').filter(Boolean);
-    return ENTRIES.map((entry) => ({
-      commands: entry.segment ? [...scopeCommands(scope), entry.segment] : scopeCommands(scope),
-      label: entry.label,
-      current: entry.matches(segments),
+    const current = selected(inside.split('/').filter(Boolean));
+    return SECTIONS.map((section) => ({
+      heading: section.heading,
+      entries: section.entries.map((entry) => ({
+        commands: [...scopeCommands(scope), ...entry.segment.split('/')],
+        label: entry.label,
+        current: entry.segment === current,
+      })),
     }));
   });
 }

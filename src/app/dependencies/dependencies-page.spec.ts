@@ -11,11 +11,15 @@ import { QITS_SCHEDULER } from '../ui/scheduler';
 import { ManualScheduler } from '../testing/manual-scheduler';
 
 /**
- * "Who still pins this", and the URL that carries the question.
+ * "Who still pins this", on the external side, and the URL that carries the question.
  *
  * The rule this spec is about: **the search lives in the URL**, so an answer is shareable and the
  * back button means "the previous search". Everything else — the request, the table, the empty
  * state — follows from that one signal.
+ *
+ * Two more, worth as much: the request says `kind=EXTERNAL`, because the page is one of two now and
+ * the narrowing is the service's; and a row is amber because the service called the pin `pending`,
+ * never because this page compared two version strings.
  */
 describe('DependenciesPage', () => {
   let http: HttpTestingController;
@@ -28,8 +32,13 @@ describe('DependenciesPage', () => {
     name: '@qits/angular',
     latest: '2026.8.4',
     pins: [
-      { repository: 'qits-ci', version: '2026.8.1', manifestPath: 'package.json' },
-      { repository: 'qits-spa-home', version: '2026.8.4', manifestPath: 'package.json' },
+      { repository: 'qits-ci', version: '2026.8.1', manifestPath: 'package.json', pending: true },
+      {
+        repository: 'qits-spa-home',
+        version: '2026.8.4',
+        manifestPath: 'package.json',
+        pending: false,
+      },
     ],
     ...over,
   });
@@ -64,7 +73,7 @@ describe('DependenciesPage', () => {
   }
 
   it('asks for nothing until something is asked for', async () => {
-    harness = await RouterTestingHarness.create('/dependencies');
+    harness = await RouterTestingHarness.create('/external/dependencies');
     await settle();
 
     expect(page().querySelector('app-empty')?.textContent).toContain('Type a dependency name');
@@ -72,11 +81,13 @@ describe('DependenciesPage', () => {
   });
 
   it('searches what the URL asks for, and fills the box from it', async () => {
-    harness = await RouterTestingHarness.create('/dependencies?name=@qits/*');
+    harness = await RouterTestingHarness.create('/external/dependencies?name=@qits/*');
     await settle();
 
     const request = searchRequest();
     expect(request.request.params.get('name')).toBe('@qits/*');
+    // The half of the inventory is the service's filter, not one applied after the answer arrives.
+    expect(request.request.params.get('kind')).toBe('EXTERNAL');
     request.flush([dependency()]);
     await settle();
 
@@ -87,7 +98,7 @@ describe('DependenciesPage', () => {
   });
 
   it('lists who pins it, and links each one to its repository', async () => {
-    harness = await RouterTestingHarness.create('/dependencies?name=@qits/angular');
+    harness = await RouterTestingHarness.create('/external/dependencies?name=@qits/angular');
     await settle();
     searchRequest().flush([dependency()]);
     await settle();
@@ -95,14 +106,16 @@ describe('DependenciesPage', () => {
     const rows = page().querySelectorAll('tbody tr');
     expect(rows).toHaveLength(2);
     expect(rows[0].querySelector('a')?.getAttribute('href')).toBe('/repositories/qits-ci');
-    // The first pin is behind the latest, the second is on it.
-    expect(rows[0].className).toContain('row-behind');
-    expect(rows[1].className).not.toContain('row-behind');
+    // The service called the first pin pending and the second not. The versions are not compared
+    // here: a page that did would disagree with the branch the service actually writes.
+    expect(rows[0].className).toContain('row-pending');
+    expect(rows[0].textContent).toContain('behind');
+    expect(rows[1].className).not.toContain('row-pending');
     http.verify();
   });
 
   it('puts a submitted search in the URL, which is what makes an answer shareable', async () => {
-    harness = await RouterTestingHarness.create('/dependencies');
+    harness = await RouterTestingHarness.create('/external/dependencies');
     await settle();
 
     const input = page().querySelector<HTMLInputElement>('#dependency-name');
@@ -120,7 +133,7 @@ describe('DependenciesPage', () => {
   });
 
   it('reports a failed search and retries it on request', async () => {
-    harness = await RouterTestingHarness.create('/dependencies?name=x');
+    harness = await RouterTestingHarness.create('/external/dependencies?name=x');
     await settle();
     searchRequest().flush({ message: 'nope' }, { status: 503, statusText: 'Service Unavailable' });
     await settle();
@@ -137,7 +150,7 @@ describe('DependenciesPage', () => {
   });
 
   it('says a dependency nothing pins is exactly that', async () => {
-    harness = await RouterTestingHarness.create('/dependencies?name=lonely');
+    harness = await RouterTestingHarness.create('/external/dependencies?name=lonely');
     await settle();
     searchRequest().flush([dependency({ name: 'lonely', pins: [], latest: null })]);
     await settle();

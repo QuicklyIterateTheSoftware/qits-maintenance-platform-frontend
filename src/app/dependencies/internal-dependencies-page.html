@@ -1,0 +1,124 @@
+@if (selected()) {
+  <p class="crumbs">
+    <!-- Back to the listing is the same address without the two query parameters, which is what a
+         router link with no queryParams resolves to. -->
+    <a [routerLink]="[...scoped.commands(), 'internal', 'dependencies']">Internal dependencies</a
+    ><span class="sep">/</span>{{ name() }}
+  </p>
+}
+
+<header class="head">
+  <h1>{{ selected() ? name() : 'Internal dependencies' }}</h1>
+</header>
+@if (scoped.name(); as project) {
+  <p class="project-scope">{{ project }}</p>
+}
+
+@if (selected()) {
+  <p class="facts">
+    <span class="subtle">{{ ecosystem() }}</span>
+    <span class="latest">latest {{ subjectLatest() || none }}</span>
+    @if (artifact(); as row) {
+      <span class="subtle" [attr.title]="instant(row.occurredAt)"
+        >newest release {{ row.version }}, built {{ ago(row.occurredAt) }}</span
+      >
+      <!-- The ingest state of that newest release. A MISSING bill of materials is why a dependent
+           list can be shorter than a reader expects, and it is ordinary rather than a fault. -->
+      <app-status-badge [status]="row.sbomStatus" />
+    }
+  </p>
+
+  <app-async
+    [state]="dependentsState()"
+    loadingLabel="Loading the dependents"
+    errorLabel="Could not load the dependents"
+    (retry)="loadDependents()"
+  />
+
+  @if (dependentsState().kind === 'ready') {
+    @if (dependents().length === 0) {
+      <app-empty
+        message="Nothing on the platform embeds this, or no SBOM has been published for whatever does."
+      />
+    } @else {
+      <app-dependents-table
+        [dependents]="dependents()"
+        [subjectLatest]="subjectLatest()"
+        [showArtifact]="true"
+        [now]="now()"
+        [caption]="'The newest release of every artifact of ours that contains it.'"
+      />
+    }
+  }
+} @else {
+  <p class="lede">
+    Everything this platform publishes, and how much of what it has already released is carrying an
+    old copy of it. Read from bills of materials, not from manifests: a service that pins the newest
+    version and has not been rebuilt is still shipping the old one.
+  </p>
+
+  <app-async
+    [state]="artifactsState()"
+    loadingLabel="Loading the artifacts"
+    errorLabel="Could not load the artifacts"
+    (retry)="loadArtifacts()"
+  />
+
+  @if (artifactsState().kind === 'ready') {
+    @if (artifacts().length === 0) {
+      <app-empty
+        message="Nothing has been released here yet. This listing is built from what the platform has published, so it stays empty until a release lands."
+      />
+    } @else {
+      <div class="scroll">
+        <table>
+          <caption>
+            {{
+              caption()
+            }}. Click a name to see what is still shipping an old copy of it.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Ecosystem</th>
+              <th scope="col">Repository</th>
+              <th scope="col">Latest</th>
+              <th scope="col">Newest built</th>
+              <th scope="col">SBOM</th>
+              <th scope="col" class="num">Dependents</th>
+              <th scope="col" class="num">Behind</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (artifact of artifacts(); track artifact.ecosystem + '|' + artifact.name) {
+              <tr [class.row-pending]="artifact.behindCount > 0">
+                <td class="mono value">
+                  <!-- The subject goes in the query string and never in a segment: a name holds
+                       slashes and colons, and this way the answer is a link worth pasting. -->
+                  <a
+                    [routerLink]="[]"
+                    [queryParams]="{ ecosystem: artifact.ecosystem, name: artifact.name }"
+                    >{{ artifact.name }}</a
+                  >
+                </td>
+                <td>{{ artifact.ecosystem }}</td>
+                <td>
+                  <a [routerLink]="[...scoped.commands(), 'repositories', artifact.repository]">{{
+                    artifact.repository
+                  }}</a>
+                </td>
+                <td class="mono">{{ artifact.latest || none }}</td>
+                <td [attr.title]="instant(artifact.occurredAt)" class="subtle">
+                  {{ artifact.version }} · {{ ago(artifact.occurredAt) }}
+                </td>
+                <td><app-status-badge [status]="artifact.sbomStatus" /></td>
+                <td class="num">{{ artifact.dependentCount }}</td>
+                <td class="num">{{ artifact.behindCount }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+}

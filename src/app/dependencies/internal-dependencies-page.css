@@ -1,0 +1,27 @@
+/* What this page adds to the shared page furniture: the fact line under one artifact's name, and
+   the tint on a library whose reach has gone stale. */
+
+.facts {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.15rem 0 1rem;
+}
+
+.latest {
+  color: #166534;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+/* A library some of whose dependents are behind is the reason this listing exists, so it is the row
+   that stands out — the same amber a pending pin gets, because it is the same kind of news: work
+   waiting. Unlike a pin, the work is a rebuild of somebody else's repository. */
+.row-pending td {
+  background: #fffbeb;
+}
+
+.row-pending td:first-child a {
+  font-weight: 600;
+}

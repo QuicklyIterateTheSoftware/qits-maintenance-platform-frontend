@@ -6,11 +6,20 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { QitsButton } from '@qits/ui-components';
 import { MaintenanceApi } from '../api/maintenance-api';
 import { injectScopedProject } from '../nav/scoped-project';
-import { isBumpTerminal, type BumpDto, type RepositoryDto, type ScanScope } from '../api/dto';
+import {
+  groupSection,
+  isBumpTerminal,
+  type BumpDto,
+  type GroupDto,
+  type InventorySection,
+  type RepositoryDto,
+  type ScanScope,
+} from '../api/dto';
 import { Async } from '../ui/async';
 import { Empty } from '../ui/empty';
 import { NONE, formatInstant, formatRelative, plural } from '../ui/format';
@@ -33,12 +42,30 @@ export const POLL_INTERVAL_MS = 2000;
  */
 export const SCAN_POLL_LIMIT = 90;
 
+/** A repository as this listing draws it: only the groups of the section on screen. */
+interface RepositoryRow {
+  readonly repository: RepositoryDto;
+  readonly groups: readonly GroupDto[];
+  readonly pending: number;
+}
+
 /**
- * The front door: every repository in the catalog, when it was last read, and what is waiting.
+ * Every repository in the catalog, seen from one side of the inventory.
  *
- * **The two header buttons start real work.** `Scan internal` re-reads the manifests and the qits
- * registries; `Scan external` re-reads the mirror. Both answer 202 and are queued on the service's
- * one worker, so pressing one twice queues two scans rather than interleaving them — and neither is
+ * **One component, two addresses.** `/internal` and `/external` are the same listing asked a
+ * different question, and the section arrives as route `data` rather than as a parameter — see
+ * app.routes.ts. Everything that differs follows from it: the heading, the one scan button, and
+ * which of a repository's groups are drawn at all.
+ *
+ * **The section filters the groups, not the repositories.** A repository with nothing on this side
+ * still has a row: it was scanned, its status is worth reading, and a listing that dropped it would
+ * make "is this repository being maintained" unanswerable from the page that exists to answer it.
+ * Its pending figure is the sum over the groups shown, which is the only figure the row's chips can
+ * be checked against.
+ *
+ * **The header button starts real work.** `Scan internal` re-reads the manifests and the qits
+ * registries; `Scan external` re-reads the mirror. It answers 202 and is queued on the service's
+ * one worker, so pressing it twice queues two scans rather than interleaving them — and it is not
  * greyed out while one is going, because the service holds that rule and this page reports its
  * answer rather than keeping a second copy of it.
  *
@@ -62,11 +89,29 @@ export class RepositoriesPage {
   protected readonly scoped = injectScopedProject();
 
   private readonly api = inject(MaintenanceApi);
+  private readonly route = inject(ActivatedRoute);
   private readonly scheduler = inject(QITS_SCHEDULER);
 
   protected readonly none = NONE;
   /** The clock the relative times are drawn against — a minute's resolution needs no more. */
   private readonly now = tickingNow(30000);
+
+  private readonly data = toSignal(this.route.data, {
+    initialValue: {} as Record<string, unknown>,
+  });
+
+  /**
+   * Which half of the inventory this listing is about, from the route table.
+   *
+   * INTERNAL is the fallback rather than an error: a route added without the datum should show the
+   * platform's own side, which is the front door, instead of an empty page nobody can diagnose.
+   */
+  protected readonly section = computed<InventorySection>(() =>
+    this.data()['section'] === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL',
+  );
+
+  /** `Internal` / `External`, for the heading and the button. */
+  protected readonly sectionLabel = computed(() => label(this.section()));
 
   protected readonly reposState = signal<Loadable<readonly RepositoryDto[]>>(LOADING);
   protected readonly bumpsState = signal<Loadable<readonly BumpDto[]>>(LOADING);
@@ -97,13 +142,32 @@ export class RepositoriesPage {
     this.bumps().filter((bump) => !isBumpTerminal(bump.status)),
   );
 
+  /**
+   * The rows, each carrying only the groups of the section on screen.
+   *
+   * The per-repository figure is summed over those groups rather than taken from `pending`, which
+   * counts both sides: a row saying "4 pending" beside chips adding up to one would be a page
+   * arguing with itself.
+   */
+  protected readonly rows = computed<readonly RepositoryRow[]>(() => {
+    const section = this.section();
+    return this.repositories().map((repository) => {
+      const groups = repository.groups.filter((group) => groupSection(group) === section);
+      return {
+        repository,
+        groups,
+        pending: groups.reduce((sum, group) => sum + group.pending, 0),
+      };
+    });
+  });
+
   protected readonly caption = computed(() =>
-    plural(this.repositories().length, 'repository', 'repositories'),
+    plural(this.rows().length, 'repository', 'repositories'),
   );
 
-  /** How many pins across the whole catalog are behind — the one number the page opens with. */
+  /** How much of this side of the catalog is behind — the one number the page opens with. */
   protected readonly totalPending = computed(() =>
-    this.repositories().reduce((sum, repository) => sum + repository.pending, 0),
+    this.rows().reduce((sum, row) => sum + row.pending, 0),
   );
 
   constructor() {

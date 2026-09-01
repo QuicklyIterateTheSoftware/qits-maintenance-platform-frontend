@@ -78,6 +78,9 @@ describe('App', () => {
     const harness = await RouterTestingHarness.create('/repositories/qits-ci');
     http.expectOne('/maintenance/api/repositories/qits-ci').flush({ name: 'qits-ci', pins: [] });
     http.expectOne((candidate) => candidate.url === '/maintenance/api/bumps').flush([]);
+    http
+      .expectOne('/maintenance/api/repositories/qits-ci/dependents')
+      .flush({ repository: 'qits-ci', artifacts: [] });
     await harness.fixture.whenStable();
 
     const layout = harness.routeNativeElement as HTMLElement;
@@ -86,12 +89,22 @@ describe('App', () => {
     http.verify();
   });
 
-  it('routes the dependency search, which asks for nothing until it is asked', async () => {
-    const harness = await RouterTestingHarness.create('/dependencies');
+  it('routes the external dependency search, which asks for nothing until it is asked', async () => {
+    const harness = await RouterTestingHarness.create('/external/dependencies');
     await harness.fixture.whenStable();
 
     const layout = harness.routeNativeElement as HTMLElement;
     expect(layout.querySelector('main app-dependencies-page')).not.toBeNull();
+    http.verify();
+  });
+
+  it('routes the internal dependency listing, which reads the artifacts on arrival', async () => {
+    const harness = await RouterTestingHarness.create('/internal/dependencies');
+    http.expectOne('/maintenance/api/artifacts').flush([]);
+    await harness.fixture.whenStable();
+
+    const layout = harness.routeNativeElement as HTMLElement;
+    expect(layout.querySelector('main app-internal-dependencies-page')).not.toBeNull();
     http.verify();
   });
 

@@ -43,8 +43,9 @@
   font-size: 0.85rem;
 }
 
-/* A repository holding something other than the latest is the answer the page was opened for. */
-.row-behind td {
+/* A repository a bump would move is the answer the page was opened for. Amber, as everywhere else
+   in this application that something is waiting. */
+.row-pending td {
   background: #fffbeb;
 }
 
