@@ -232,6 +232,8 @@ export interface DependentsDto {
 export interface ArtifactDependentsDto {
   readonly ecosystem: string;
   readonly name: string;
+  /** The newest version the service knows for this artifact; null before any lookup or event. */
+  readonly latest: string | null;
   readonly dependents: readonly DependentDto[];
 }
 

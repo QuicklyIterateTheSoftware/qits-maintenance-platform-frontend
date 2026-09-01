@@ -91,7 +91,12 @@ describe('RepositoryPage', () => {
   const dependents = (rows: readonly DependentDto[] = []): RepositoryDependentsDto => ({
     repository: 'qits-ci',
     artifacts: [
-      { ecosystem: 'maven', name: 'eu.wohlben.qits:qits-ci-client', dependents: [...rows] },
+      {
+        ecosystem: 'maven',
+        name: 'eu.wohlben.qits:qits-ci-client',
+        latest: '2026.901.1',
+        dependents: [...rows],
+      },
     ],
   });
 
@@ -301,8 +306,10 @@ describe('RepositoryPage', () => {
     );
     expect(table?.textContent).toContain('2026.811.1');
     expect(table?.textContent).toContain('direct');
-    // Nothing here carries a latest, so no row may claim to be up to date.
-    expect(table?.textContent).toContain('UNKNOWN');
+    // Each artifact's group carries ITS latest, so the verdict is real: the fixture embeds
+    // 2026.811.1 against a latest of 2026.901.1, and the row says so.
+    expect(table?.textContent).toContain('BEHIND');
+    expect(page().textContent).toContain('latest 2026.901.1');
     http.verify();
   });
 

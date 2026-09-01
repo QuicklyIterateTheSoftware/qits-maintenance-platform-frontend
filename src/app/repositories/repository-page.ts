@@ -18,7 +18,6 @@ import {
   isBumpTerminal,
   releaseSentinel,
   type BumpDto,
-  type DependentDto,
   type GroupDto,
   type PinDto,
   type RepositoryDependentsDto,
@@ -195,11 +194,15 @@ export class RepositoryPage {
     () => `${plural(this.pins().length, 'pin')}, ${this.pendingPins()} behind.`,
   );
 
-  /** Every dependent of every artifact this repository publishes, in one table. */
-  protected readonly dependents = computed<readonly DependentDto[]>(() => {
+  /**
+   * The dependents grouped per artifact this repository publishes — one table each, because the
+   * up-to-date verdict compares against THAT artifact's latest and a flattened list would have to
+   * answer with one latest for several subjects.
+   */
+  protected readonly dependentGroups = computed(() => {
     const state = this.dependentsState();
     return state.kind === 'ready'
-      ? (state.value.artifacts ?? []).flatMap((artifact) => artifact.dependents ?? [])
+      ? (state.value.artifacts ?? []).filter((artifact) => (artifact.dependents ?? []).length > 0)
       : [];
   });
 

@@ -128,20 +128,29 @@
 />
 
 @if (dependentsState().kind === 'ready') {
-  @if (dependents().length === 0) {
+  @if (dependentGroups().length === 0) {
     <app-empty
       message="Nothing on the platform consumes this repository's artifacts, or no SBOM has been published for it yet."
     />
   } @else {
-    <!-- The artifact is named on every row because a repository publishes several, and no version
-         is compared: this listing carries no `latest` for any of them, so every verdict is UNKNOWN
-         rather than a guess. The internal dependency view is where that question is answered. -->
-    <app-dependents-table
-      [dependents]="dependents()"
-      [showArtifact]="true"
-      [now]="now()"
-      [caption]="'Every artifact of ours whose newest release contains one of this repository’s.'"
-    />
+    <!-- One table per published artifact, because the up-to-date verdict compares each dependent's
+         embedded version against THAT artifact's latest — a flattened list would have to answer
+         with one latest for several subjects. -->
+    @for (group of dependentGroups(); track group.ecosystem + '|' + group.name) {
+      <h3 class="dependents-artifact">
+        {{ group.name }} <span class="muted">{{ group.ecosystem }}</span>
+        @if (group.latest) {
+          <span class="muted">· latest {{ group.latest }}</span>
+        }
+      </h3>
+      <app-dependents-table
+        [dependents]="group.dependents"
+        [showArtifact]="true"
+        [now]="now()"
+        [subjectLatest]="group.latest"
+        [caption]="'Every artifact of ours whose newest release contains ' + group.name + '.'"
+      />
+    }
   }
 }
 
