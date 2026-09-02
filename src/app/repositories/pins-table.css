@@ -1,0 +1,56 @@
+/* What the pins table adds to the shared page furniture: the amber on a pin that is behind, the
+   greyed rows for what a release merely contains, and the chevron that opens one. */
+
+h2 {
+  margin: 1.5rem 0 0.35rem;
+  font-size: 1rem;
+}
+
+/* A pin that is behind is what the reader came for, so it is the row that stands out. The tint is
+   the one the pending chips use, and it is only ever on a pin: a transitive has nothing to move. */
+.row-pending td {
+  background: #fffbeb;
+}
+
+/* Contained, not declared. Grey and quiet: there is no line to edit and no bump to press, so the
+   row must not compete with the pins it sits under. */
+.row-transitive td {
+  color: #9ca3af;
+  background: #fafafa;
+}
+
+/* The turn under its parent. It is the whole first cell of a transitive row, which is what makes
+   the nesting readable without a tree. */
+.indent {
+  padding-left: 0.6rem;
+  color: #9ca3af;
+}
+
+.row-roots td {
+  background: #fafafa;
+}
+
+/* A disclosure, not a button in the platform's sense: it opens rows in the table it is part of,
+   and drawing it as one would promise an action somewhere else. */
+.chevron {
+  padding: 0 0.3rem 0 0;
+  border: 0;
+  background: none;
+  color: #6b7280;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chevron:hover {
+  color: #111827;
+}
+
+/* A lookup that failed leaves a blank latest, which on its own reads as "up to date". */
+.lookup-error {
+  margin-left: 0.35rem;
+  color: #b91c1c;
+  font-family: system-ui, sans-serif;
+  font-size: 0.8rem;
+  font-style: italic;
+}

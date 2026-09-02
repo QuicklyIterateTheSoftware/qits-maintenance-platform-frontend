@@ -5,18 +5,26 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { provideQitsNavigationLinks } from '@qits/ui-components';
-import type { BumpDto, PinDto, RepositoryDetailDto } from '../api/dto';
+import type {
+  BumpDto,
+  DependentDto,
+  PinDto,
+  RepositoryDependentsDto,
+  RepositoryDetailDto,
+} from '../api/dto';
 import { routes } from '../app.routes';
 import { QITS_SCHEDULER } from '../ui/scheduler';
 import { ManualScheduler } from '../testing/manual-scheduler';
 import { POLL_INTERVAL_MS } from './repository-page';
 
 /**
- * One repository's page: the pins, the group panels and the button that writes a branch.
+ * One repository's page: the pins, what its releases contain, what consumes them, the group panels
+ * and the button that writes a branch.
  *
  * The assertions that matter are the ones about the button: it sends the POST the contract names,
  * it is **disabled while that group's bump is running** — and it still reports a 409, because a
- * bump the schedule started a second before the click is a state this page cannot have seen.
+ * bump the schedule started a second before the click is a state this page cannot have seen. Beside
+ * those, the split of the pins by kind, and the rule that a transitive is never drawn as work.
  */
 describe('RepositoryPage', () => {
   let http: HttpTestingController;
@@ -24,6 +32,7 @@ describe('RepositoryPage', () => {
   let scheduler: ManualScheduler;
 
   const DETAIL_URL = '/maintenance/api/repositories/qits-ci';
+  const DEPENDENTS_URL = '/maintenance/api/repositories/qits-ci/dependents';
   const BUMPS_URL = '/maintenance/api/bumps';
   const BUMP_URL = '/maintenance/api/repositories/qits-ci/groups/dependencies/bumps';
 
@@ -35,23 +44,60 @@ describe('RepositoryPage', () => {
     range: null,
     kind: 'INTERNAL',
     latest: '2026.821.3',
+    latestError: null,
     pending: true,
     group: 'dependencies',
     location: 'property:qits.eventstream.version',
+    scope: 'DIRECT',
     ...over,
   });
 
   const detail = (over: Partial<RepositoryDetailDto> = {}): RepositoryDetailDto => ({
     name: 'qits-ci',
+    project: 'qits',
     lastScanAt: '2026-08-21T09:00:00Z',
+    headSha: 'abc1234',
     status: 'OK',
     message: null,
     pending: 1,
     groups: [
-      { name: 'dependencies', branch: 'maintenance/dependencies', state: 'PUSHED', pending: 1 },
+      {
+        name: 'dependencies',
+        source: 'DEFAULT',
+        kind: 'INTERNAL',
+        branch: 'maintenance/dependencies',
+        state: 'PUSHED',
+        headSha: null,
+        pending: 1,
+      },
     ],
     pins: [pin()],
+    transitives: [],
     ...over,
+  });
+
+  const dependent = (over: Partial<DependentDto> = {}): DependentDto => ({
+    artifactEcosystem: 'maven',
+    artifactName: 'eu.wohlben.qits:qits-events',
+    artifactVersion: '2026.821.9',
+    repository: 'qits-events-service',
+    embeddedVersion: '2026.811.1',
+    direct: true,
+    occurredAt: '2026-08-21T08:00:00Z',
+    sbomStatus: 'INGESTED',
+    ...over,
+  });
+
+  const dependents = (rows: readonly DependentDto[] = []): RepositoryDependentsDto => ({
+    repository: 'qits-ci',
+    artifacts: [
+      {
+        ecosystem: 'maven',
+        name: 'eu.wohlben.qits:qits-ci-client',
+        latest: '2026.901.1',
+        dependents: [...rows],
+      },
+    ],
   });
 
   const bump = (over: Partial<BumpDto> = {}): BumpDto => ({
@@ -67,6 +113,7 @@ describe('RepositoryPage', () => {
     startedAt: '2026-08-21T09:30:00Z',
     finishedAt: '2026-08-21T09:31:00Z',
     message: '1 dependency',
+    releaseRequestId: null,
     ...over,
   });
 
@@ -104,14 +151,22 @@ describe('RepositoryPage', () => {
     return http.expectOne((candidate) => candidate.url === BUMPS_URL && candidate.method === 'GET');
   }
 
+  function dependentsRequest() {
+    return http.expectOne(
+      (candidate) => candidate.url === DEPENDENTS_URL && candidate.method === 'GET',
+    );
+  }
+
   async function open(
     repository: RepositoryDetailDto,
     bumps: readonly BumpDto[],
+    consumers: RepositoryDependentsDto = dependents(),
   ): Promise<void> {
     harness = await RouterTestingHarness.create('/repositories/qits-ci');
     await settle();
     detailRequest().flush(repository);
     bumpsRequest().flush(bumps);
+    dependentsRequest().flush(consumers);
     await settle();
   }
 
@@ -146,6 +201,147 @@ describe('RepositoryPage', () => {
     const rows = page().querySelectorAll('tbody tr');
     expect(rows[0].className).toContain('row-pending');
     expect(rows[1].className).not.toContain('row-pending');
+    http.verify();
+  });
+
+  /** A failed lookup leaves a blank latest and a false pending, which must not read as good news. */
+  it('says so beside the latest when the registry could not be asked', async () => {
+    await open(
+      detail({
+        pins: [pin({ latest: null, latestError: 'mirror answered 502', pending: false })],
+      }),
+      [],
+    );
+
+    const cell = page().querySelector('.lookup-error');
+    expect(cell?.textContent).toContain('lookup failed');
+    expect(cell?.getAttribute('title')).toContain('502');
+    http.verify();
+  });
+
+  /** Two tables, because internal pins are release work and external pins are patching. */
+  it('splits the pins by kind, and folds away the ones nothing can move', async () => {
+    await open(
+      detail({
+        pins: [
+          pin(),
+          pin({ name: 'io.quarkus:quarkus-bom', kind: 'EXTERNAL', pending: false }),
+          pin({ name: 'eu.wohlben.qits:qits-parent', kind: 'REACTOR', pending: false }),
+        ],
+      }),
+      [],
+    );
+
+    const tables = page().querySelectorAll('app-pins-table');
+    expect(tables[0].querySelector('h2')?.textContent).toContain('Internal pins');
+    expect(tables[0].textContent).toContain('qits-eventstream');
+    expect(tables[0].textContent).not.toContain('quarkus-bom');
+    expect(tables[1].querySelector('h2')?.textContent).toContain('External pins');
+    expect(tables[1].textContent).toContain('quarkus-bom');
+    expect(page().querySelector('details summary')?.textContent).toContain('Own / unresolved');
+    expect(page().querySelector('details')?.textContent).toContain('qits-parent');
+    http.verify();
+  });
+
+  /**
+   * A transitive is not a pin: there is no line to edit and no bump to press, so it is never drawn
+   * in the amber that means work is waiting — and it is not drawn at all until it is asked for.
+   */
+  it('folds what a release contains under the pin that pulled it in, greyed and collapsed', async () => {
+    await open(
+      detail({
+        transitives: [
+          {
+            ecosystem: 'maven',
+            name: 'com.fasterxml.jackson.core:jackson-databind',
+            version: '2.17.0',
+            via: 'eu.wohlben.qits:qits-eventstream',
+            behind: true,
+          },
+        ],
+      }),
+      [],
+    );
+
+    expect(page().textContent).not.toContain('jackson-databind');
+
+    page().querySelector<HTMLButtonElement>('app-pins-table .chevron')?.click();
+    await settle();
+
+    const transitive = page().querySelector('.row-transitive');
+    expect(transitive?.textContent).toContain('jackson-databind');
+    expect(transitive?.textContent).toContain('newer available');
+    expect(transitive?.className).not.toContain('row-pending');
+    http.verify();
+  });
+
+  /** A component no pin on the page accounts for is the one an advisory is most likely to name. */
+  it('keeps a transitive whose via is nobody’s pin, under the root disclosure', async () => {
+    await open(
+      detail({
+        transitives: [
+          { ecosystem: 'npm', name: 'tslib', version: '2.6.0', via: null, behind: false },
+        ],
+      }),
+      [],
+    );
+
+    const roots = page().querySelector('.row-roots');
+    expect(roots?.textContent).toContain('(root)');
+
+    roots?.querySelector<HTMLButtonElement>('.chevron')?.click();
+    await settle();
+
+    expect(page().querySelector('.row-transitive')?.textContent).toContain('tslib');
+    http.verify();
+  });
+
+  /** The other direction: what the platform has already released that carries this repository. */
+  it('lists what consumes the repository’s artifacts, and links each one', async () => {
+    await open(detail(), [], dependents([dependent()]));
+
+    const table = page().querySelector('app-dependents-table');
+    expect(table?.querySelector('a')?.getAttribute('href')).toBe(
+      '/repositories/qits-events-service',
+    );
+    expect(table?.textContent).toContain('2026.811.1');
+    expect(table?.textContent).toContain('direct');
+    // Each artifact's group carries ITS latest, so the verdict is real: the fixture embeds
+    // 2026.811.1 against a latest of 2026.901.1, and the row says so.
+    expect(table?.textContent).toContain('BEHIND');
+    expect(page().textContent).toContain('latest 2026.901.1');
+    http.verify();
+  });
+
+  it('says nothing consumes a repository rather than drawing blank space', async () => {
+    await open(detail(), [], { repository: 'qits-ci', artifacts: [] });
+
+    expect(page().querySelector('app-dependents-table')).toBeNull();
+    expect(page().textContent).toContain('Nothing on the platform consumes');
+    http.verify();
+  });
+
+  /** A release is a fact that happened: a bump cannot move it, so the poll never re-reads it. */
+  it('never re-reads the dependents while it polls a running bump', async () => {
+    await open(detail(), [bump({ status: 'RUNNING', finishedAt: null })]);
+
+    scheduler.fire(POLL_INTERVAL_MS);
+    await settle();
+    detailRequest().flush(detail());
+    bumpsRequest().flush([bump({ status: 'SUCCEEDED' })]);
+    await settle();
+
+    // No dependents request to flush: http.verify() is the assertion.
+    http.verify();
+  });
+
+  /** The door's answer rides along with the bump, and a sentinel is never drawn as an id to click. */
+  it('names the release request beside a bump’s message', async () => {
+    await open(detail(), [bump({ releaseRequestId: 'converged' })]);
+
+    const release = page().querySelector('.release');
+    expect(release?.textContent).toContain('converged');
+    expect(release?.getAttribute('title')).toContain('already integrated');
     http.verify();
   });
 
@@ -234,6 +430,7 @@ describe('RepositoryPage', () => {
     await settle();
     detailRequest().flush({ message: 'no such repository' }, { status: 404, statusText: 'Not Found' });
     bumpsRequest().flush([]);
+    dependentsRequest().flush(dependents());
     await settle();
 
     expect(page().textContent).toContain('404 no such repository');

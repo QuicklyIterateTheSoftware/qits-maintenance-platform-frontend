@@ -5,7 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { provideQitsNavigationLinks } from '@qits/ui-components';
-import type { BumpDto, RepositoryDto } from '../api/dto';
+import type { BumpDto, GroupDto, RepositoryDto } from '../api/dto';
 import { routes } from '../app.routes';
 import { QITS_SCHEDULER } from '../ui/scheduler';
 import { ManualScheduler } from '../testing/manual-scheduler';
@@ -15,7 +15,9 @@ import { POLL_INTERVAL_MS, SCAN_POLL_LIMIT } from './repositories-page';
  * The overview, one behaviour at a time.
  *
  * Driven through the router rather than by constructing the component, which is the house pattern:
- * the page is a lazy route and its own address is part of what it is.
+ * the page is a lazy route and its own address is part of what it is — and here the address is more
+ * than an entry point, since `/internal` and `/external` are the same component asked a different
+ * question.
  *
  * The two behaviours worth the most here are the ones nobody sees until they are wrong: **the page
  * stops polling** when nothing is in flight, and **a scan that changes no row is given up on**
@@ -29,13 +31,26 @@ describe('RepositoriesPage', () => {
   const REPOS_URL = '/maintenance/api/repositories';
   const BUMPS_URL = '/maintenance/api/bumps';
 
+  const group = (over: Partial<GroupDto> = {}): GroupDto => ({
+    name: 'dependencies',
+    source: 'DEFAULT',
+    kind: 'INTERNAL',
+    branch: 'maintenance/dependencies',
+    state: 'NONE',
+    headSha: null,
+    pending: 2,
+    ...over,
+  });
+
   const repository = (over: Partial<RepositoryDto> = {}): RepositoryDto => ({
     name: 'qits-ci',
+    project: 'qits',
     lastScanAt: '2026-08-21T09:00:00Z',
+    headSha: 'abc1234',
     status: 'OK',
     message: null,
     pending: 2,
-    groups: [{ name: 'dependencies', branch: 'maintenance/dependencies', state: 'NONE', pending: 2 }],
+    groups: [group()],
     ...over,
   });
 
@@ -52,6 +67,7 @@ describe('RepositoriesPage', () => {
     startedAt: '2026-08-21T09:30:00Z',
     finishedAt: '2026-08-21T09:31:00Z',
     message: '1 dependency',
+    releaseRequestId: null,
     ...over,
   });
 
@@ -89,12 +105,18 @@ describe('RepositoriesPage', () => {
     return http.expectOne((candidate) => candidate.url === BUMPS_URL && candidate.method === 'GET');
   }
 
-  /** Open the page with the two reads it makes on arrival already answered. */
+  /**
+   * Open the page with the two reads it makes on arrival already answered.
+   *
+   * The default address is `/`, which the route table redirects to `/internal` — the same hop a
+   * reader following the platform's navigation entry makes.
+   */
   async function open(
     repositories: readonly RepositoryDto[],
     bumps: readonly BumpDto[],
+    url = '/',
   ): Promise<void> {
-    harness = await RouterTestingHarness.create('/');
+    harness = await RouterTestingHarness.create(url);
     await settle();
     reposRequest().flush(repositories);
     bumpsRequest().flush(bumps);
@@ -132,6 +154,50 @@ describe('RepositoriesPage', () => {
     http.verify();
   });
 
+  /**
+   * A repository with groups on both sides, so the two listings have something to disagree about.
+   * The row's figure is summed over the groups shown rather than taken from `pending`, which counts
+   * both: a row saying 5 beside chips adding up to 2 would be the page arguing with itself.
+   */
+  const twoSided = () =>
+    repository({
+      pending: 5,
+      groups: [
+        group({ pending: 2 }),
+        group({
+          name: 'external',
+          kind: 'EXTERNAL',
+          branch: 'maintenance/external',
+          pending: 3,
+        }),
+      ],
+    });
+
+  it('shows only the internal groups, and counts only those', async () => {
+    await open([twoSided()], []);
+
+    expect(page().querySelector('tbody tr td.num')?.textContent).toContain('2');
+    expect(page().querySelector('tbody tr')?.textContent).not.toContain('maintenance/external');
+    http.verify();
+  });
+
+  it('shows only the external groups on the external listing', async () => {
+    await open([twoSided()], [], '/external');
+
+    expect(page().querySelector('h1')?.textContent).toContain('External');
+    expect(page().querySelector('tbody tr td.num')?.textContent).toContain('3');
+    expect(page().querySelector('tbody tr')?.textContent).toContain('maintenance/external');
+    http.verify();
+  });
+
+  /** A group whose globs decide has no kind of its own; it is shown, rather than hidden from both. */
+  it('draws a group that names no kind with the internal side', async () => {
+    await open([repository({ groups: [group({ source: 'CONFIG', kind: null })] })], []);
+
+    expect(page().querySelector('tbody tr')?.textContent).toContain('maintenance/dependencies');
+    http.verify();
+  });
+
   it('starts an internal scan and re-reads both lists', async () => {
     await open([repository()], []);
 
@@ -153,10 +219,11 @@ describe('RepositoriesPage', () => {
     http.verify();
   });
 
-  it('sends EXTERNAL from the second button and on no other', async () => {
-    await open([repository()], []);
+  /** One button, and what it scans is the section on screen rather than a second choice. */
+  it('sends EXTERNAL from the external listing, and nowhere else', async () => {
+    await open([repository()], [], '/external');
 
-    page().querySelectorAll<HTMLButtonElement>('.actions button')[1].click();
+    page().querySelectorAll<HTMLButtonElement>('.actions button')[0].click();
     await settle();
 
     const post = http.expectOne(
@@ -218,9 +285,9 @@ describe('RepositoriesPage', () => {
 
   /** No spinner for ever: a scan that moves no row is given up on, and says so. */
   it('stops waiting for a scan that never moves a row', async () => {
-    await open([repository()], []);
+    await open([repository()], [], '/external');
 
-    page().querySelectorAll<HTMLButtonElement>('.actions button')[1].click();
+    page().querySelectorAll<HTMLButtonElement>('.actions button')[0].click();
     await settle();
     http
       .expectOne('/maintenance/api/scans')

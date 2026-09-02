@@ -1,12 +1,13 @@
 <header class="head">
-  <h1>Dependencies</h1>
+  <h1>External dependencies</h1>
 </header>
 @if (scoped.name(); as project) {
   <p class="project-scope">{{ project }}</p>
 }
 <p class="lede">
-  Who pins what, across every repository in the catalog. The name is a glob — <code>@qits/*</code>,
-  <code>eu.wohlben.qits:qits-eventstream</code>, <code>io.quarkus:*</code>.
+  Who pins what of the world's, across every repository in the catalog — read through
+  qits-platform-mirror, which is where the latest versions below come from. The name is a glob —
+  <code>io.quarkus:*</code>, <code>@angular/*</code>, <code>org.postgresql:postgresql</code>.
 </p>
 
 <form class="search" (submit)="submit($event)">
@@ -70,7 +71,10 @@
               </thead>
               <tbody>
                 @for (pin of dependency.pins; track pin.repository + '|' + pin.manifestPath) {
-                  <tr [class.row-behind]="behind(pin.version, dependency.latest)">
+                  <!-- Behind is the service's word here as it is everywhere else: `pending` is the
+                       same answer the bump uses, and it replaced a string comparison this page used
+                       to make — which disagreed with the branch the service actually writes. -->
+                  <tr [class.row-pending]="pin.pending">
                     <td>
                       <a [routerLink]="[...scoped.commands(), 'repositories', pin.repository]">{{
                         pin.repository
@@ -78,8 +82,8 @@
                     </td>
                     <td class="mono">
                       {{ pin.version }}
-                      @if (behind(pin.version, dependency.latest)) {
-                        <span class="subtle">not latest</span>
+                      @if (pin.pending) {
+                        <span class="subtle">behind</span>
                       }
                     </td>
                     <td class="mono">{{ pin.manifestPath }}</td>

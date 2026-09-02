@@ -16,9 +16,13 @@ import { injectScopedProject } from '../nav/scoped-project';
 import {
   changeCount,
   isBumpTerminal,
+  releaseSentinel,
   type BumpDto,
   type GroupDto,
+  type PinDto,
+  type RepositoryDependentsDto,
   type RepositoryDetailDto,
+  type TransitiveDto,
 } from '../api/dto';
 import { Async } from '../ui/async';
 import { Empty } from '../ui/empty';
@@ -27,6 +31,8 @@ import { LOADING, describeError, failed, ready, statusOf, type Loadable } from '
 import { QITS_SCHEDULER } from '../ui/scheduler';
 import { StatusBadge } from '../ui/status-badge';
 import { tickingNow } from '../ui/ticker';
+import { DependentsTable } from './dependents-table';
+import { PinsTable } from './pins-table';
 
 /** How often this page re-reads while a bump for this repository is still going. */
 export const POLL_INTERVAL_MS = 2000;
@@ -39,12 +45,23 @@ interface GroupPanel {
 }
 
 /**
- * One repository: every pin its manifests hold, a panel per maintenance group, and what has been
- * bumped here lately.
+ * One repository, in both directions: what it pins, what its releases contain, what consumes them,
+ * a panel per maintenance group, and what has been bumped here lately.
  *
  * **Pending is the service's word, never a comparison made here.** Maven, npm and OCI tags order
  * differently, and a client that decided "2026.8.10 is behind 2026.8.9" would highlight rows the
  * service is not going to move. The `pending` flag on a pin is the same answer the bump uses.
+ *
+ * **The pins are split by kind, because they are read for different reasons.** Internal is release
+ * work — something of ours moved and this has not followed. External is patching. And REACTOR and
+ * UNRESOLVED pins are neither: a module of the repository's own build has no registry to be behind,
+ * and a coordinate nothing could place cannot be checked at all. They are real pins and they are
+ * kept, but behind a disclosure, because a reader working through what is behind can do nothing
+ * about either.
+ *
+ * **The dependents are not polled and have no button.** They are read off the bills of materials of
+ * what has actually been released; a release is a fact that happened, and it does not move while it
+ * is being looked at.
  *
  * **The button is disabled while that group's bump is running, and still handles a 409.** The
  * disable is a courtesy — the reader can see the bump on screen — and the 409 is the truth: the
@@ -54,7 +71,16 @@ interface GroupPanel {
 @Component({
   selector: 'app-repository-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Async, Empty, QitsButton, QitsCard, RouterLink, StatusBadge],
+  imports: [
+    Async,
+    DependentsTable,
+    Empty,
+    PinsTable,
+    QitsButton,
+    QitsCard,
+    RouterLink,
+    StatusBadge,
+  ],
   styleUrls: ['../ui/page.css', './repository-page.css'],
   templateUrl: './repository-page.html',
 })
@@ -67,7 +93,8 @@ export class RepositoryPage {
   private readonly scheduler = inject(QITS_SCHEDULER);
 
   protected readonly none = NONE;
-  private readonly now = tickingNow(30000);
+  /** The clock the relative times are drawn against, shared with the dependents table. */
+  protected readonly now = tickingNow(30000);
 
   private readonly params = toSignal(this.route.paramMap, { initialValue: convertToParamMap({}) });
 
@@ -76,6 +103,7 @@ export class RepositoryPage {
 
   protected readonly detailState = signal<Loadable<RepositoryDetailDto>>(LOADING);
   protected readonly bumpsState = signal<Loadable<readonly BumpDto[]>>(LOADING);
+  protected readonly dependentsState = signal<Loadable<RepositoryDependentsDto>>(LOADING);
 
   /** The group whose button is waiting for its 202, or nothing. */
   protected readonly bumping = signal<string | null>(null);
@@ -91,13 +119,92 @@ export class RepositoryPage {
     return state.kind === 'ready' ? state.value : null;
   });
 
-  protected readonly pins = computed(() => this.detail()?.pins ?? []);
+  protected readonly pins = computed<readonly PinDto[]>(() => this.detail()?.pins ?? []);
+
+  /** What the repository's own releases contain. Absent from an older service, and then empty. */
+  private readonly transitives = computed<readonly TransitiveDto[]>(
+    () => this.detail()?.transitives ?? [],
+  );
+
+  protected readonly internalPins = computed(() =>
+    this.pins().filter((pin) => pin.kind === 'INTERNAL'),
+  );
+
+  protected readonly externalPins = computed(() =>
+    this.pins().filter((pin) => pin.kind === 'EXTERNAL'),
+  );
+
+  /**
+   * The pins neither table claims: a module of the repository's own build, a coordinate nothing
+   * resolved, and any kind a later service grows. Kept — they are pins a manifest really holds —
+   * but out of the way, because nothing is ever going to move them.
+   */
+  protected readonly otherPins = computed(() =>
+    this.pins().filter((pin) => pin.kind !== 'INTERNAL' && pin.kind !== 'EXTERNAL'),
+  );
+
+  protected readonly internalTransitives = computed(() =>
+    this.transitivesUnder(this.internalPins()),
+  );
+
+  protected readonly externalTransitives = computed(() =>
+    this.transitivesUnder(this.externalPins()),
+  );
+
+  protected readonly otherTransitives = computed(() => this.transitivesUnder(this.otherPins()));
+
+  /**
+   * Everything no pin on this page accounts for — an artifact's own root, and a `via` naming a
+   * component this repository does not declare — handed to the internal table, which renders it
+   * under its "(root)" disclosure.
+   *
+   * It goes there rather than to a fourth section because it is the repository's own artifacts that
+   * contain it, and the internal table is where the repository's own side of the picture is. What
+   * matters is that it is on the page at all: an unattributed component is the one an advisory is
+   * most likely to name.
+   */
+  protected readonly rootTransitives = computed(() => {
+    const declared = new Set(this.pins().map((pin) => pin.name));
+    return this.transitives().filter(
+      (transitive) => !transitive.via || !declared.has(transitive.via),
+    );
+  });
+
+  /** The internal table's share: what hangs under an internal pin, plus everything unattributed. */
+  protected readonly internalTransitivesWithRoots = computed(() => [
+    ...this.internalTransitives(),
+    ...this.rootTransitives(),
+  ]);
+
+  /**
+   * Whether the tables have anything at all to say.
+   *
+   * A repository can have released artifacts and no readable manifest — an image built from a
+   * Containerfile, a scan that could not check the tree out — and what those artifacts contain is
+   * still worth drawing. "No pins were read here" is only the honest answer when there is nothing
+   * on either side.
+   */
+  protected readonly hasPinContent = computed(
+    () => this.pins().length > 0 || this.rootTransitives().length > 0,
+  );
 
   protected readonly pendingPins = computed(() => this.pins().filter((pin) => pin.pending).length);
 
   protected readonly caption = computed(
     () => `${plural(this.pins().length, 'pin')}, ${this.pendingPins()} behind.`,
   );
+
+  /**
+   * The dependents grouped per artifact this repository publishes — one table each, because the
+   * up-to-date verdict compares against THAT artifact's latest and a flattened list would have to
+   * answer with one latest for several subjects.
+   */
+  protected readonly dependentGroups = computed(() => {
+    const state = this.dependentsState();
+    return state.kind === 'ready'
+      ? (state.value.artifacts ?? []).filter((artifact) => (artifact.dependents ?? []).length > 0)
+      : [];
+  });
 
   protected readonly bumps = computed(() => {
     const state = this.bumpsState();
@@ -140,6 +247,17 @@ export class RepositoryPage {
     return changeCount(bump);
   }
 
+  /** What a bump's `releaseRequestId` means when it is not an id, or null when it is one. */
+  protected sentinel(bump: BumpDto): string | null {
+    return releaseSentinel(bump.releaseRequestId);
+  }
+
+  /** The transitives that hang under one of these pins, by the name their `via` gives. */
+  private transitivesUnder(pins: readonly PinDto[]): readonly TransitiveDto[] {
+    const names = new Set(pins.map((pin) => pin.name));
+    return this.transitives().filter((transitive) => !!transitive.via && names.has(transitive.via));
+  }
+
   protected instant(iso: string | null): string {
     return formatInstant(iso);
   }
@@ -148,8 +266,9 @@ export class RepositoryPage {
     return formatRelative(iso, this.now());
   }
 
+  /** The page's three reads, issued together and retried separately. */
   protected async load(): Promise<void> {
-    await Promise.all([this.loadDetail(), this.loadBumps()]);
+    await Promise.all([this.loadDetail(), this.loadBumps(), this.loadDependents()]);
   }
 
   protected async loadDetail(): Promise<void> {
@@ -175,6 +294,24 @@ export class RepositoryPage {
       this.bumpsState.set(failed(error));
     }
     this.syncPolling();
+  }
+
+  /**
+   * Who consumes this repository's artifacts.
+   *
+   * Never polled and never re-read by the poll below: a bump moves pins, and nothing a bump does
+   * changes what has already been released and ingested. It is loaded once and retried by hand.
+   */
+  protected async loadDependents(): Promise<void> {
+    const name = this.name();
+    if (this.dependentsState().kind !== 'ready') {
+      this.dependentsState.set(LOADING);
+    }
+    try {
+      this.dependentsState.set(ready(await this.api.repositoryDependents(name)));
+    } catch (error) {
+      this.dependentsState.set(failed(error));
+    }
   }
 
   /**
@@ -239,6 +376,7 @@ export class RepositoryPage {
     this.stopPoll();
     this.detailState.set(LOADING);
     this.bumpsState.set(LOADING);
+    this.dependentsState.set(LOADING);
     this.bumping.set(null);
     this.bumpNote.set('');
     this.pollProblem.set('');

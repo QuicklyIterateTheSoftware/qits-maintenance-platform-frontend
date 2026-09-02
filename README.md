@@ -1,23 +1,36 @@
 # qits-maintenance-platform-frontend
 
 The maintenance frontend: what every repository in the catalog pins, what the registries have
-released since, and which maintenance branches are waiting. Served by qits-platform-maintenance at
-the root of `maintenance.<env>.<domain>` through Quinoa. Four addresses, all inside the platform
-chrome, and each of them reachable under a project slug as well.
+released since, what the platform's own releases already ship, and which maintenance branches are
+waiting. Served by qits-platform-maintenance at the root of `maintenance.<env>.<domain>` through
+Quinoa. Six addresses, all inside the platform chrome, and each of them reachable under a project
+slug as well.
 
-- **`/`** — every repository: last scan, status, how many pins are behind, and its
-  groups as chips. Two buttons start a scan.
-- **`/repositories/<name>`** — the pins, a panel per group with `Create branch now`,
-  and the bumps this repository has had.
-- **`/dependencies?name=<glob>`** — who pins what. This is the page that answers "who
-  still pins eventstream 2026.8.x".
-- **`/bumps/<id>`** — one bump: the branch, the changes sent, and the CI run.
+**The first segment is the section, and it is the organising idea of the application.** `internal`
+is what this platform publishes and can release; `external` is what the world publishes and
+qits-platform-mirror caches. Each has the same two views, because they are different questions asked
+by different readers: internal is release work, external is patching.
+
+- **`/internal`** — every repository, with its internal groups as chips: last scan, status, how
+  many pins are behind. One button starts an internal scan.
+- **`/internal/dependencies`** — everything the platform publishes, how far each library's reach
+  goes and how much of that reach is stale. `?ecosystem=&name=` opens one of them and lists what
+  still ships an old copy of it. Built from bills of materials, not from manifests.
+- **`/external`** and **`/external/dependencies?name=<glob>`** — the same two views of the world's
+  side. The search is the page that answers "who is still on Quarkus 3.29".
+- **`/repositories/<name>`** — section-neutral: internal pins and external pins as two tables, what
+  those pins drag in underneath them, what the platform already ships that contains this
+  repository's artifacts, a panel per group with `Create branch now`, and the bumps it has had.
+- **`/bumps/<id>`** — one bump: the branch, the changes sent, the CI run, and what the release door
+  answered.
+- **`/`** redirects to `/internal`, and **`/dependencies`** — the search's address when there was
+  only one of them — redirects to `/internal/dependencies` with its query parameters intact.
 
 ## The project in the address
 
-This app is **project scoped**: `/qits/dependencies` is the same page as `/dependencies`. The
-literal routes are matched first, so `repositories`, `dependencies` and `bumps` stay this app's own
-pages and never read as projects of those names.
+This app is **project scoped**: `/qits/internal` is the same page as `/internal`. The literal routes
+are matched first, so `internal`, `external`, `repositories`, `dependencies` and `bumps` stay this
+app's own pages and never read as projects of those names.
 
 The scope is read from the address by `@qits/ui-components` (`provideQitsScope('project')`), never
 from a route parameter, so one component serves both forms. It is drawn in the page header and
@@ -28,9 +41,24 @@ query.
 
 **Behind is the service's word, never a comparison made here.** Maven, npm and OCI tags order
 differently, and a client that decided `2026.8.10` is behind `2026.8.9` would highlight rows the
-service is not going to move. The `pending` flag on a pin is the same answer the bump uses. The one
-exception is the dependency search, which marks a pin whose version simply differs from `latest` —
-and says "not latest" rather than "behind".
+service is not going to move. The `pending` flag on a pin is the same answer the bump uses, and it
+is what the external search highlights too — it used to compare two strings itself, and disagreed
+with the branch the service actually writes.
+
+The one comparison this application does make is **equality**, in the dependents table: a release
+either embeds the same string the registry calls latest or it does not. Equality needs no ordering.
+Where no latest is known the verdict is `UNKNOWN` and never success — a lookup that failed must not
+read as good news, which is also why a pin's `latestError` is drawn beside its blank `latest`.
+
+**A pin can be moved; a transitive cannot.** The repository page draws both, and the difference is
+the whole point of how they look: a pin that is behind is amber, and what a release merely
+*contains* is grey, indented under the direct dependency that pulled it in, collapsed until it is
+asked for, and never amber. There is no line to edit and no bump to press for it.
+
+**What a repository consumes and what consumes it are read from different places.** Pins come from
+manifests, because a manifest is what a bump edits. Dependents come from the bills of materials of
+what has actually been released, because a service that pins the newest version and has not been
+rebuilt is still shipping the old one — and its manifest says nothing about that.
 
 **The service holds the rules; these pages report its answers.** One bump per (repository, group) is
 a `409`, and that is drawn as a sentence. The group's button is also disabled while its bump is
@@ -52,25 +80,34 @@ option: same-origin sends the cookie by default.
 
 ## The contract it consumes
 
-Seven calls, pinned in the superproject's `qits-maintenance-plan.md` ("API"):
+Ten calls, pinned in the superproject's `qits-maintenance-plan.md` ("API"):
 
 ```
-GET  /maintenance/api/repositories                                  → [{name, lastScanAt, status, message, pending, groups:[{name, branch, state, pending}]}]
-GET  /maintenance/api/repositories/{name}                           → repository + pins:[…]
-GET  /maintenance/api/dependencies?name=<glob>                      → [{ecosystem, name, latest, pins:[{repository, version, manifestPath}]}]
-POST /maintenance/api/scans {scope}                                 → 202 {id}
+GET  /maintenance/api/repositories                                  → [{name, project, lastScanAt, headSha, status, message, pending, groups:[{name, source, kind, branch, state, headSha, pending}]}]
+GET  /maintenance/api/repositories/{name}                           → repository + pins:[…] + transitives:[{ecosystem, name, version, via, behind}]
+GET  /maintenance/api/repositories/{name}/dependents                → {repository, artifacts:[{ecosystem, name, dependents:[…]}]}
+GET  /maintenance/api/dependencies?name=<glob>&kind=INTERNAL|EXTERNAL → [{ecosystem, name, latest, checkedAt, error, pins:[{repository, version, manifestPath, pending}]}]
+GET  /maintenance/api/dependencies/dependents?ecosystem=&name=      → {ecosystem, name, latest, dependents:[{artifactEcosystem, artifactName, artifactVersion, repository, embeddedVersion, direct, occurredAt, sbomStatus}]}
+GET  /maintenance/api/artifacts                                     → [{ecosystem, name, repository, latest, version, occurredAt, sbomStatus, dependentCount, behindCount}]
+POST /maintenance/api/scans {scope, repository?}                    → 202 {id}
 POST /maintenance/api/repositories/{name}/groups/{group}/bumps      → 202 {id}   (409 while one is active)
 GET  /maintenance/api/bumps?repository=&limit=20                    → [bump rows]
 GET  /maintenance/api/bumps/{id}                                    → one bump row
 ```
 
-Three things the JSON shape alone does not say, and which these pages depend on:
+Six things the JSON shape alone does not say, and which these pages depend on:
 
 - **The reads answer bare arrays and bare objects, not envelopes.** No `{items: […]}` wrapper.
 - **A bump row spells its group as `group` and its CI ids as `ciEventId` / `ciRunId`**, and may
   carry a `branch`. Without one the page falls back to `maintenance/<group>`.
 - **`GET /repositories/{name}` carries the overview's fields too** — `status`, `lastScanAt`,
   `message` and `groups` — because the group panels and the header are drawn from them.
+- **A group's `kind` is null when its globs decide**, which a configured group's do. Such a group is
+  drawn with the internal side rather than hidden from both.
+- **A pin's `kind` is one of four** — `INTERNAL`, `EXTERNAL`, `REACTOR`, `UNRESOLVED` — and its
+  `scope` is always `DIRECT`: what a release merely contains arrives as `transitives`, separately.
+- **A bump's `releaseRequestId` is a request id, or one of two sentinels** — `converged` (the branch
+  was already integrated) and `refused`. Both are rendered as they arrive and never linked.
 
 ## How it is served
 

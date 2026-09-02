@@ -12,7 +12,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink, convertToParamMap } from '@angular/router';
 import { MaintenanceApi } from '../api/maintenance-api';
 import { injectScopedProject } from '../nav/scoped-project';
-import { bumpBranch, isBumpTerminal, type BumpDto } from '../api/dto';
+import { bumpBranch, isBumpTerminal, releaseSentinel, type BumpDto } from '../api/dto';
 import { Async } from '../ui/async';
 import { Empty } from '../ui/empty';
 import { NONE, formatDuration, formatInstant, plural } from '../ui/format';
@@ -87,6 +87,15 @@ export class BumpPage {
     const bump = this.bump();
     return bump ? formatDuration(bump.startedAt, bump.finishedAt, this.now()) : NONE;
   });
+
+  /**
+   * What the release door's answer means, when it is not a request id.
+   *
+   * A bump does not end at the branch: the branch is offered to qits-workspaces' release door, and
+   * what that answered is on the row. Two of its answers are words rather than ids — the branch was
+   * already integrated, or the door refused — and neither of them is something to link to.
+   */
+  protected readonly sentinel = computed(() => releaseSentinel(this.bump()?.releaseRequestId));
 
   /** The run in qits-ci's own frontend, which is another application at another base path. */
   protected readonly ciRunHref = computed(() => {

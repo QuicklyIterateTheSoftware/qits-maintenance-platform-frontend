@@ -50,7 +50,36 @@ h2 {
   font-size: 0.9rem;
 }
 
-/* A pin that is behind is what the reader came for, so it is the row that stands out. */
-.row-pending td {
-  background: #fffbeb;
+/* The pins are drawn by app-pins-table now, which carries its own amber: a component's styles do
+   not reach into another's, and that is the point — the tint belongs to the table that owns the
+   rows it is on. */
+
+/* Something real, kept out of the way rather than dropped. Plain <details>: the platform has no
+   disclosure component, and a page that grew a dependency for one triangle would be worse. */
+.aside {
+  margin: 1rem 0;
+}
+
+.aside summary {
+  color: #6b7280;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* The release request beside a bump's message: present, and quieter than the sentence it follows. */
+.release {
+  margin-left: 0.4rem;
+  font-size: 0.85em;
+}
+
+/* One dependents table per published artifact; the heading names the subject and its latest. */
+.dependents-artifact {
+  margin: 1.25rem 0 0.4rem;
+  font-size: 1rem;
+}
+
+.dependents-artifact .muted {
+  color: #6b7280;
+  font-weight: normal;
+  font-size: 0.9em;
 }

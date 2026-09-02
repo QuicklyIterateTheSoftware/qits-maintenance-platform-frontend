@@ -19,11 +19,18 @@ import { NONE, plural } from '../ui/format';
 import { IDLE, LOADING, failed, ready, type Loadable } from '../ui/loadable';
 
 /**
- * Who pins what: one dependency, and every repository holding a version of it.
+ * Who pins what, on the world's side: one external dependency, and every repository holding a
+ * version of it.
  *
- * This is the page that answers "who still pins eventstream 2026.8.x" — the question a release
- * leaves behind, and the one the repository pages cannot answer because it is asked across all of
- * them at once.
+ * This is the page that answers "who is still on Quarkus 3.29" — the question an advisory leaves
+ * behind, and the one the repository pages cannot answer because it is asked across all of them at
+ * once.
+ *
+ * **External is the service's filter, not a filter applied here.** The request carries
+ * `kind=EXTERNAL`, so the count in the caption is the count of what was asked for; a page that
+ * dropped internal rows after the fact would have paid for them and would then disagree with its
+ * own heading. The internal half has a listing of its own, because the question there is not "who
+ * pins it" but "what already ships it".
  *
  * **The search is in the URL.** `?name=@qits/*` is what makes an answer shareable, what makes the
  * back button mean "the previous search", and what makes a reload show the same thing. The input is
@@ -109,14 +116,9 @@ export class DependenciesPage {
       return;
     }
     this.state.set(LOADING);
-    this.api.dependencies(term).then(
+    this.api.dependencies(term, 'EXTERNAL').then(
       (dependencies) => this.state.set(ready(dependencies)),
       (error: unknown) => this.state.set(failed(error)),
     );
-  }
-
-  /** A pin that is not on the latest version — said plainly, never as a version comparison. */
-  protected behind(version: string, latest: string | null): boolean {
-    return !!latest && version !== latest;
   }
 }

@@ -4,8 +4,12 @@ import { firstValueFrom } from 'rxjs';
 import { QITS_API_BASE } from './api-base';
 import type {
   AcceptedDto,
+  ArtifactDto,
   BumpDto,
   DependencyDto,
+  DependentsDto,
+  InventorySection,
+  RepositoryDependentsDto,
   RepositoryDetailDto,
   RepositoryDto,
   ScanScope,
@@ -14,9 +18,14 @@ import type {
 /**
  * Everything this app says to qits-platform-maintenance, through the edge, at `/maintenance/api`.
  *
- * **Five reads and two writes, and the writes are the point of the application.** A scan refreshes
+ * **Eight reads and two writes, and the writes are the point of the application.** A scan refreshes
  * what the platform pins and what the registries hold; a bump asks CI to write the branch. Both
  * answer 202: the work is accepted, not finished, and every page re-reads for anything else.
+ *
+ * **Three of the reads are about the other direction.** Pins say what a repository consumes;
+ * `artifacts`, `artifactDependents` and `repositoryDependents` say what consumes it, read off the
+ * bills of materials of what the platform has actually released. Nothing in that half is editable,
+ * and none of it is polled.
  *
  * **Every path is relative.** The SPA is served at `/maintenance/` by the service itself, behind
  * the edge that serves `/maintenance/api/…`, so a same-origin absolute path is what lets the
@@ -39,7 +48,7 @@ export class MaintenanceApi {
     );
   }
 
-  /** One repository with every pin its manifests hold. */
+  /** One repository with every pin its manifests hold, and what its artifacts contain. */
   repository(name: string): Promise<RepositoryDetailDto> {
     return firstValueFrom(this.http.get<RepositoryDetailDto>(this.repositoryUrl(name)));
   }
@@ -50,12 +59,49 @@ export class MaintenanceApi {
    * The glob is the service's to interpret — `@qits/*`, `eu.wohlben.qits:qits-eventstream` — and is
    * sent as a query parameter rather than a path segment, because a name holds slashes and colons
    * and a reader types both.
+   *
+   * `kind` narrows the answer to one half of the inventory, and is the service's filter rather than
+   * a filter applied here: a page that dropped rows after the fact would still be paying for them,
+   * and would disagree with its own caption about how many there are.
    */
-  dependencies(name: string): Promise<readonly DependencyDto[]> {
+  dependencies(name: string, kind?: InventorySection): Promise<readonly DependencyDto[]> {
+    let params = new HttpParams().set('name', name);
+    if (kind) {
+      params = params.set('kind', kind);
+    }
     return firstValueFrom(
-      this.http.get<DependencyDto[]>(`${this.base}/maintenance/api/dependencies`, {
-        params: new HttpParams().set('name', name),
+      this.http.get<DependencyDto[]>(`${this.base}/maintenance/api/dependencies`, { params }),
+    );
+  }
+
+  /**
+   * Everything the platform publishes, newest release first as the service orders it.
+   *
+   * The order is the SERVICE's and is not re-sorted here, for the reason `bumps` gives: a client
+   * sorting the rows would disagree with the caption above them the moment two rows tie.
+   */
+  artifacts(): Promise<readonly ArtifactDto[]> {
+    return firstValueFrom(this.http.get<ArtifactDto[]>(`${this.base}/maintenance/api/artifacts`));
+  }
+
+  /**
+   * What embeds one dependency, read off the bills of materials of what has been released.
+   *
+   * Both halves of the coordinate are query parameters and neither is a segment: an npm name holds
+   * a slash and a maven one holds a colon, and the ecosystem is what makes the pair unique.
+   */
+  artifactDependents(ecosystem: string, name: string): Promise<DependentsDto> {
+    return firstValueFrom(
+      this.http.get<DependentsDto>(`${this.base}/maintenance/api/dependencies/dependents`, {
+        params: new HttpParams().set('ecosystem', ecosystem).set('name', name),
       }),
+    );
+  }
+
+  /** What consumes a repository's own artifacts — the other direction of its pins. */
+  repositoryDependents(name: string): Promise<RepositoryDependentsDto> {
+    return firstValueFrom(
+      this.http.get<RepositoryDependentsDto>(`${this.repositoryUrl(name)}/dependents`),
     );
   }
 

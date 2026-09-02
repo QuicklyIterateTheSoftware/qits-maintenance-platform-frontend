@@ -1,9 +1,8 @@
 <header class="head">
-  <h1>Maintenance</h1>
+  <h1>{{ sectionLabel() }} repositories</h1>
   <div class="actions">
-    <qits-button [busy]="scanning()" (pressed)="scan('INTERNAL')">Scan internal</qits-button>
-    <qits-button variant="secondary" [busy]="scanning()" (pressed)="scan('EXTERNAL')"
-      >Scan external</qits-button
+    <qits-button [busy]="scanning()" (pressed)="scan(section())"
+      >Scan {{ sectionLabel().toLowerCase() }}</qits-button
     >
   </div>
 </header>
@@ -11,8 +10,13 @@
   <p class="project-scope">{{ project }}</p>
 }
 <p class="lede">
-  What every repository in the catalog pins, and what the registries have released since. Internal
-  is the qits registries; external is the mirror.
+  @if (section() === 'INTERNAL') {
+    What every repository in the catalog pins of the platform's own, and what the qits registries
+    have released since.
+  } @else {
+    What every repository in the catalog pins of the world's, and what qits-platform-mirror has seen
+    released since.
+  }
 </p>
 
 @if (scanNote(); as note) {
@@ -59,26 +63,26 @@
           </tr>
         </thead>
         <tbody>
-          @for (repository of repositories(); track repository.name) {
-            <tr [class.row-pending]="repository.pending > 0">
+          @for (row of rows(); track row.repository.name) {
+            <tr [class.row-pending]="row.pending > 0">
               <td>
-                <a [routerLink]="[...scoped.commands(), 'repositories', repository.name]">{{
-                  repository.name
+                <a [routerLink]="[...scoped.commands(), 'repositories', row.repository.name]">{{
+                  row.repository.name
                 }}</a>
               </td>
-              <td [attr.title]="instant(repository.lastScanAt)" class="subtle">
-                {{ ago(repository.lastScanAt) }}
+              <td [attr.title]="instant(row.repository.lastScanAt)" class="subtle">
+                {{ ago(row.repository.lastScanAt) }}
               </td>
               <td>
                 <!-- The message is the whole explanation of an UNREACHABLE or a CONFIG_ERROR, and
                      it is a sentence rather than a word, so it rides in the title of the badge
                      instead of widening every row that does not need it. -->
-                <span [attr.title]="repository.message">
-                  <app-status-badge [status]="repository.status" />
+                <span [attr.title]="row.repository.message">
+                  <app-status-badge [status]="row.repository.status" />
                 </span>
               </td>
-              <td class="num">{{ repository.pending }}</td>
-              <td><app-group-chips [groups]="repository.groups" /></td>
+              <td class="num">{{ row.pending }}</td>
+              <td><app-group-chips [groups]="row.groups" /></td>
             </tr>
           }
         </tbody>
@@ -89,6 +93,10 @@
 
 <h2>Recent bumps</h2>
 
+<!-- Not filtered by the section, and deliberately so: a bump names its GROUP, and a group is what
+     carries the kind. The last twenty branches this service wrote are one list however this page
+     was reached, and splitting it would hide half of a repository's recent history behind a link
+     the reader has no reason to follow. -->
 <app-async
   [state]="bumpsState()"
   loadingLabel="Loading the bumps"

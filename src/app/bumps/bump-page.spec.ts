@@ -45,6 +45,7 @@ describe('BumpPage', () => {
     startedAt: '2026-08-21T09:30:00Z',
     finishedAt: '2026-08-21T09:31:00Z',
     message: null,
+    releaseRequestId: 'rr-42',
     ...over,
   });
 
@@ -117,6 +118,33 @@ describe('BumpPage', () => {
 
     const link = page().querySelector<HTMLAnchorElement>('.facts a[href="/ci/runs/run-7"]');
     expect(link?.textContent).toContain('run-7');
+    http.verify();
+  });
+
+  /** A bump does not end at the branch: what the release door said is on the row, id or word. */
+  it('names the release request the door answered with', async () => {
+    await open(bump());
+    expect(page().querySelector('.facts')?.textContent).toContain('rr-42');
+    http.verify();
+  });
+
+  /**
+   * “converged” is not an id and is never linked. It is drawn as it arrives — inventing a
+   * friendlier word would be this page disagreeing with the record — with the sentence beside it.
+   */
+  it('explains a sentinel rather than passing it off as a request id', async () => {
+    await open(bump({ releaseRequestId: 'converged' }));
+
+    const facts = page().querySelector('.facts')?.textContent ?? '';
+    expect(facts).toContain('converged');
+    expect(facts).toContain('already integrated');
+    http.verify();
+  });
+
+  it('says a bump with no release request has none', async () => {
+    await open(bump({ status: 'NOTHING_TO_DO', releaseRequestId: null, changes: [] }));
+
+    expect(page().querySelector('.facts')?.textContent).not.toContain('converged');
     http.verify();
   });
 

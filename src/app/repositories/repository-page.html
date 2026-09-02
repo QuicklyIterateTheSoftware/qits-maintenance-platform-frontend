@@ -75,50 +75,82 @@
   }
 }
 
-<h2>Pins</h2>
-
 @if (detailState().kind === 'ready') {
-  @if (pins().length === 0) {
+  @if (!hasPinContent()) {
+    <h2>Pins</h2>
     <app-empty
       message="No pins were read here. Either the manifests hold none, or the last scan could not read them — the status above says which."
     />
   } @else {
-    <div class="scroll">
-      <table>
-        <caption>
-          {{
-            caption()
-          }}
-          A pin is behind when the service says so, never when this page compares two strings.
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Manifest</th>
-            <th scope="col">Ecosystem</th>
-            <th scope="col">Dependency</th>
-            <th scope="col">Version</th>
-            <th scope="col">Latest</th>
-            <th scope="col">Kind</th>
-            <th scope="col">Group</th>
-            <th scope="col">Location</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (pin of pins(); track pin.manifestPath + '|' + pin.name + '|' + pin.location) {
-            <tr [class.row-pending]="pin.pending">
-              <td class="mono">{{ pin.manifestPath }}</td>
-              <td>{{ pin.ecosystem }}</td>
-              <td class="mono value">{{ pin.name }}</td>
-              <td class="mono" [attr.title]="pin.range">{{ pin.version }}</td>
-              <td class="mono">{{ pin.latest || none }}</td>
-              <td>{{ pin.kind }}</td>
-              <td class="mono">{{ pin.group }}</td>
-              <td class="mono subtle">{{ pin.location }}</td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
+    <!-- Two tables and a disclosure, not one table with a Kind column to sort by: internal pins are
+         release work and external pins are patching, and a reader is doing one of those. -->
+    <app-pins-table
+      heading="Internal pins"
+      [pins]="internalPins()"
+      [transitives]="internalTransitivesWithRoots()"
+      [caption]="
+        caption() +
+        ' A pin is behind when the service says so, never when this page compares two strings.'
+      "
+      emptyMessage="This repository pins nothing of the platform's own."
+    />
+
+    <app-pins-table
+      heading="External pins"
+      [pins]="externalPins()"
+      [transitives]="externalTransitives()"
+      emptyMessage="This repository pins nothing of the world's, or the mirror has not been scanned."
+    />
+
+    @if (otherPins().length > 0) {
+      <!-- A module of this repository's own build, or a coordinate nothing resolved. Real pins, and
+           nothing is ever going to move them, so they are folded away rather than dropped. -->
+      <details class="aside">
+        <summary>Own / unresolved pins ({{ otherPins().length }})</summary>
+        <app-pins-table [pins]="otherPins()" [transitives]="otherTransitives()" />
+      </details>
+    }
+  }
+}
+
+<h2>Dependents</h2>
+
+<p class="lede">
+  What the platform has already released that contains an artifact of this repository — the pins
+  above, read backwards.
+</p>
+
+<app-async
+  [state]="dependentsState()"
+  loadingLabel="Loading the dependents"
+  errorLabel="Could not load the dependents"
+  (retry)="loadDependents()"
+/>
+
+@if (dependentsState().kind === 'ready') {
+  @if (dependentGroups().length === 0) {
+    <app-empty
+      message="Nothing on the platform consumes this repository's artifacts, or no SBOM has been published for it yet."
+    />
+  } @else {
+    <!-- One table per published artifact, because the up-to-date verdict compares each dependent's
+         embedded version against THAT artifact's latest — a flattened list would have to answer
+         with one latest for several subjects. -->
+    @for (group of dependentGroups(); track group.ecosystem + '|' + group.name) {
+      <h3 class="dependents-artifact">
+        {{ group.name }} <span class="muted">{{ group.ecosystem }}</span>
+        @if (group.latest) {
+          <span class="muted">· latest {{ group.latest }}</span>
+        }
+      </h3>
+      <app-dependents-table
+        [dependents]="group.dependents"
+        [showArtifact]="true"
+        [now]="now()"
+        [subjectLatest]="group.latest"
+        [caption]="'Every artifact of ours whose newest release contains ' + group.name + '.'"
+      />
+    }
   }
 }
 
@@ -161,7 +193,16 @@
               </td>
               <td>{{ bump.trigger }}</td>
               <td class="num">{{ changes(bump) }}</td>
-              <td class="value">{{ bump.message || none }}</td>
+              <td class="value">
+                {{ bump.message || none }}
+                <!-- What the release door said about the branch. A sentinel is not an id and is
+                     never linked; the bump's own page spells out what it means. -->
+                @if (bump.releaseRequestId; as request) {
+                  <span class="release subtle" [attr.title]="sentinel(bump) || 'release request'"
+                    >release {{ request }}</span
+                  >
+                }
+              </td>
             </tr>
           }
         </tbody>
