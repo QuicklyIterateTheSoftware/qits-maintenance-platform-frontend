@@ -335,13 +335,13 @@ describe('RepositoryPage', () => {
     http.verify();
   });
 
-  /** The door's answer rides along with the bump, and a sentinel is never drawn as an id to click. */
+  /** The ask's answer rides along with the bump, and a sentinel is never drawn as an id to click. */
   it('names the release request beside a bump’s message', async () => {
     await open(detail(), [bump({ releaseRequestId: 'converged' })]);
 
     const release = page().querySelector('.release');
     expect(release?.textContent).toContain('converged');
-    expect(release?.getAttribute('title')).toContain('already integrated');
+    expect(release?.getAttribute('title')).toContain('nothing left to ask for');
     http.verify();
   });
 

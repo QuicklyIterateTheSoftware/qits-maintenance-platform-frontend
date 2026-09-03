@@ -195,7 +195,7 @@
               <td class="num">{{ changes(bump) }}</td>
               <td class="value">
                 {{ bump.message || none }}
-                <!-- What the release door said about the branch. A sentinel is not an id and is
+                <!-- What the release ask answered about the branch. A sentinel is not an id and is
                      never linked; the bump's own page spells out what it means. -->
                 @if (bump.releaseRequestId; as request) {
                   <span class="release subtle" [attr.title]="sentinel(bump) || 'release request'"

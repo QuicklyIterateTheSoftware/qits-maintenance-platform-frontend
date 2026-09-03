@@ -121,8 +121,8 @@ describe('BumpPage', () => {
     http.verify();
   });
 
-  /** A bump does not end at the branch: what the release door said is on the row, id or word. */
-  it('names the release request the door answered with', async () => {
+  /** A bump does not end at the branch: what the release ask answered is on the row, id or word. */
+  it('names the release request qits-projects answered with', async () => {
     await open(bump());
     expect(page().querySelector('.facts')?.textContent).toContain('rr-42');
     http.verify();
@@ -137,7 +137,7 @@ describe('BumpPage', () => {
 
     const facts = page().querySelector('.facts')?.textContent ?? '';
     expect(facts).toContain('converged');
-    expect(facts).toContain('already integrated');
+    expect(facts).toContain('nothing left to ask for');
     http.verify();
   });
 

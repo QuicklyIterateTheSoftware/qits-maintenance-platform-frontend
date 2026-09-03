@@ -79,7 +79,7 @@
     <dd>
       @if (current.releaseRequestId; as request) {
         <!-- The column holds a request id or one of two sentinels, and the sentinels are rendered
-             exactly as they arrive: “converged” is what the door said, and inventing a friendlier
+             exactly as they arrive: “converged” is what the row holds, and inventing a friendlier
              word for it would be this page disagreeing with the record. -->
         <span class="mono">{{ request }}</span>
         @if (sentinel(); as note) {
