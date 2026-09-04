@@ -262,8 +262,9 @@ export interface BumpChangeDto {
  * `changes` is optional for a duller reason: the listing may leave it out to keep its rows small,
  * and a page that counted it blind would break on the day it does. `changeCount` is that count.
  *
- * `releaseRequestId` is what the release door said when the branch was offered to it. It is a
- * request id, or one of the two sentinels below, or null for a bump that never got that far.
+ * `releaseRequestId` is what qits-projects answered when the branch was offered for release. It is
+ * the id of an OPEN release request — the gates settle it and Auto Release tags it afterwards — or
+ * one of the two sentinels below, or null for a bump that never got that far.
  */
 export interface BumpDto {
   readonly id: string;
@@ -288,10 +289,10 @@ export interface BumpDto {
   readonly releaseRequestId: string | null;
 }
 
-/** The branch was already integrated, or gone, so there was nothing to ask the door for. */
+/** No request id came back, or the branch was gone before the ask could be made. */
 export const RELEASE_CONVERGED = 'converged';
 
-/** The door refused in a way a retry cannot fix; the bump's `message` is the sentence. */
+/** The ask was refused in a way a retry cannot fix; the bump's `message` is the sentence. */
 export const RELEASE_REFUSED = 'refused';
 
 /**
@@ -303,10 +304,10 @@ export const RELEASE_REFUSED = 'refused';
  */
 export function releaseSentinel(releaseRequestId: string | null | undefined): string | null {
   if (releaseRequestId === RELEASE_CONVERGED) {
-    return 'the branch was already integrated — nothing was asked for';
+    return 'there was nothing left to ask for — no request came back';
   }
   if (releaseRequestId === RELEASE_REFUSED) {
-    return 'the door refused; the message says why';
+    return 'the release request was refused; the message says why';
   }
   return null;
 }

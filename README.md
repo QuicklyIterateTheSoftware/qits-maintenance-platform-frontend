@@ -21,7 +21,7 @@ by different readers: internal is release work, external is patching.
 - **`/repositories/<name>`** — section-neutral: internal pins and external pins as two tables, what
   those pins drag in underneath them, what the platform already ships that contains this
   repository's artifacts, a panel per group with `Create branch now`, and the bumps it has had.
-- **`/bumps/<id>`** — one bump: the branch, the changes sent, the CI run, and what the release door
+- **`/bumps/<id>`** — one bump: the branch, the changes sent, the CI run, and what the release ask
   answered.
 - **`/`** redirects to `/internal`, and **`/dependencies`** — the search's address when there was
   only one of them — redirects to `/internal/dependencies` with its query parameters intact.
@@ -106,8 +106,10 @@ Six things the JSON shape alone does not say, and which these pages depend on:
   drawn with the internal side rather than hidden from both.
 - **A pin's `kind` is one of four** — `INTERNAL`, `EXTERNAL`, `REACTOR`, `UNRESOLVED` — and its
   `scope` is always `DIRECT`: what a release merely contains arrives as `transitives`, separately.
-- **A bump's `releaseRequestId` is a request id, or one of two sentinels** — `converged` (the branch
-  was already integrated) and `refused`. Both are rendered as they arrive and never linked.
+- **A bump's `releaseRequestId` is a request id, or one of two sentinels** — `converged` (nothing
+  came back to hold on to) and `refused`. Both are rendered as they arrive and never linked. The id
+  names an OPEN release request in qits-projects, not a release: the quality gates settle it and Auto
+  Release tags it afterwards.
 
 ## How it is served
 

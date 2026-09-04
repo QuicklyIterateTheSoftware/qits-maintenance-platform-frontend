@@ -89,11 +89,11 @@ export class BumpPage {
   });
 
   /**
-   * What the release door's answer means, when it is not a request id.
+   * What the release ask's answer means, when it is not a request id.
    *
-   * A bump does not end at the branch: the branch is offered to qits-workspaces' release door, and
-   * what that answered is on the row. Two of its answers are words rather than ids — the branch was
-   * already integrated, or the door refused — and neither of them is something to link to.
+   * A bump does not end at the branch: a release request is opened for it in qits-projects, and what
+   * that answered is on the row. Two of the answers are words rather than ids — nothing came back to
+   * hold on to, or the ask was refused — and neither of them is something to link to.
    */
   protected readonly sentinel = computed(() => releaseSentinel(this.bump()?.releaseRequestId));
 
