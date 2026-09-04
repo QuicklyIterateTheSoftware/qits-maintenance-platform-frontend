@@ -137,9 +137,10 @@ which is the intended degraded state rather than a fault.
 npm run lint && npm test && npm run build
 ```
 
-The same three, in the same order, are what `.config/qits/ci-post-receive.yml` runs on every push.
-Note what that pipeline installs from: the npm proxy behind it is qits-platform-mirror, and the
-`@qits` scope comes from qits-artifacts — so a run here cannot be green while either service is
+The same three, in the same order, are what `.config/qits/ci-event-release-request.yml` runs on a
+release request's fold — the one pipeline this repository has, since nothing builds on a push any
+more. Note what that pipeline installs from: the npm proxy behind it is qits-platform-mirror, and
+the `@qits` scope comes from qits-artifacts — so a run here cannot be green while either service is
 down.
 
 Installing on a developer machine needs a credential, and it is not in this repository. Every read
