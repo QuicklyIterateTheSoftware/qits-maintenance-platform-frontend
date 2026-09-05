@@ -35,6 +35,7 @@ describe('TrainByReleaseResolver', () => {
   const train = (id: string): TrainDto => ({
     id,
     repository: 'qits-eventstream',
+    repositoryCatalogId: 'repo-eventstream',
     version: '2026.905.1',
     status: 'COMPLETED',
     createdAt: '2026-09-05T09:00:00Z',

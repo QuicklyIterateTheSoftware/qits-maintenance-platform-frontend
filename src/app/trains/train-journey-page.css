@@ -52,6 +52,14 @@
   margin-right: 0.6rem;
 }
 
+/* The station's own release request, over in qits-projects. Quieter than the station name: the row
+   is about the release, and this is where the rest of the story of it is kept. */
+.row-station .request {
+  margin-right: 0.6rem;
+  color: #4338ca;
+  font-size: 0.85rem;
+}
+
 /* Everything below the release the address names is drawn quieter than it. The page is about one
    release; the journey past it is context, and context must not shout over its subject. */
 .row-deep td {

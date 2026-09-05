@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink, convertToParamMap } from '@angular/router';
+import { QitsAppLinks } from '@qits/ui-components';
 import { MaintenanceApi } from '../api/maintenance-api';
 import { injectScopedProject } from '../nav/scoped-project';
 import { bumpBranch, isBumpTerminal, releaseSentinel, type BumpDto } from '../api/dto';
@@ -36,8 +37,10 @@ export const POLL_INTERVAL_MS = 2000;
  * `dependency:g:a`, `line:3`. When a bump goes wrong that column is usually the reason, so it is on
  * screen rather than in a log.
  *
- * **The CI run is a link out of this application.** qits-ci serves its own SPA at `/ci/`, and
- * `/ci/runs/<id>` is a run there — a plain href, because a router link only moves within this app.
+ * **The CI run is a link out of this application, at the address the platform states.** qits-ci
+ * serves its own SPA, and `QitsAppLinks` is what knows where — an href and never a router link,
+ * because a router link only moves within this app, and no anchor at all where the platform serves
+ * no qits-ci to link to.
  */
 @Component({
   selector: 'app-bump-page',
@@ -53,6 +56,7 @@ export class BumpPage {
   private readonly api = inject(MaintenanceApi);
   private readonly route = inject(ActivatedRoute);
   private readonly scheduler = inject(QITS_SCHEDULER);
+  private readonly appLinks = inject(QitsAppLinks);
 
   protected readonly none = NONE;
   /** A running bump's elapsed time is a subtraction, never a reason to make a request. */
@@ -97,10 +101,17 @@ export class BumpPage {
    */
   protected readonly sentinel = computed(() => releaseSentinel(this.bump()?.releaseRequestId));
 
-  /** The run in qits-ci's own frontend, which is another application at another base path. */
+  /**
+   * The run in qits-ci's own frontend, as the platform's navigation addresses it.
+   *
+   * <b>No scope.</b> A run is addressed by its id alone on that side — the same shape the
+   * qits-deployments pages link it with — so a project spelled into the path would address nothing.
+   * `undefined` where there is no run yet, and equally where this platform serves no qits-ci: the
+   * row then says so rather than offering an anchor to nowhere.
+   */
   protected readonly ciRunHref = computed(() => {
     const runId = this.bump()?.ciRunId;
-    return runId ? `/ci/runs/${encodeURIComponent(runId)}` : null;
+    return runId ? this.appLinks.href('qits-ci', `runs/${encodeURIComponent(runId)}`) : undefined;
   });
 
   constructor() {

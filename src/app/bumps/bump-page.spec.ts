@@ -1,20 +1,46 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideLocationMocks } from '@angular/common/testing';
+import type { EnvironmentProviders } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { provideQitsNavigationLinks } from '@qits/ui-components';
+import {
+  provideQitsNavigationLinks,
+  provideQitsNavigationTree,
+  type QitsNavigation,
+} from '@qits/ui-components';
 import type { BumpDto } from '../api/dto';
 import { routes } from '../app.routes';
 import { QITS_SCHEDULER } from '../ui/scheduler';
 import { ManualScheduler } from '../testing/manual-scheduler';
 import { POLL_INTERVAL_MS } from './bump-page';
 
+/** The chrome, answered from a literal, with qits-ci served on a host of its own. */
+const PLATFORM: QitsNavigation = {
+  environment: 'dev',
+  origin: 'https://dev.example.test',
+  slots: {
+    'services.details': [
+      {
+        app: 'qits-ci',
+        label: 'CI',
+        host: 'ci.dev.example.test',
+        origin: 'https://ci.dev.example.test',
+      },
+    ],
+  },
+  applications: {},
+};
+
+/** The same platform serving no qits-ci — the only honest way to make `href` answer `undefined`. */
+const WITHOUT_CI: QitsNavigation = { ...PLATFORM, slots: {} };
+
 /**
  * One bump, and the two things about it that are easy to get wrong: **the branch**, which the row
  * may not carry and which then falls back to the group's own, and **the link to the CI run**, which
- * leaves this application and so must be an href rather than a router link.
+ * leaves this application — an href at the address the platform states, and no anchor at all where
+ * it states none.
  */
 describe('BumpPage', () => {
   let http: HttpTestingController;
@@ -49,19 +75,30 @@ describe('BumpPage', () => {
     ...over,
   });
 
-  beforeEach(() => {
-    scheduler = new ManualScheduler();
+  /**
+   * The providers this page is read with. The navigation is an argument because the run link is
+   * composed from it; everything else runs with the empty chrome, which is all a page about one
+   * bump's facts needs. The reset is what lets a test ask for a different platform after the
+   * outer `beforeEach` has already instantiated one.
+   */
+  function configure(navigation: EnvironmentProviders = provideQitsNavigationLinks([])): void {
+    TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       providers: [
         provideRouter(routes),
         provideLocationMocks(),
         provideHttpClient(),
         provideHttpClientTesting(),
-        provideQitsNavigationLinks([]),
+        navigation,
         { provide: QITS_SCHEDULER, useValue: scheduler },
       ],
     });
     http = TestBed.inject(HttpTestingController);
+  }
+
+  beforeEach(() => {
+    scheduler = new ManualScheduler();
+    configure();
   });
 
   async function settle(): Promise<void> {
@@ -112,12 +149,31 @@ describe('BumpPage', () => {
     http.verify();
   });
 
-  /** qits-ci is another application at another base path, so this is an href, not a router link. */
-  it('links the CI run out of this application', async () => {
+  /**
+   * qits-ci is another application on another host, so this is an href and not a router link — and
+   * the host is the platform's answer rather than a base path compiled in here.
+   *
+   * **No scope.** A run is addressed by its id alone over there, the same way the qits-deployments
+   * pages link one, so a project spelled into the path would address nothing.
+   */
+  it('links the CI run out of this application, at the address the platform states', async () => {
+    configure(provideQitsNavigationTree(PLATFORM));
     await open(bump());
 
-    const link = page().querySelector<HTMLAnchorElement>('.facts a[href="/ci/runs/run-7"]');
+    const link = page().querySelector<HTMLAnchorElement>(
+      '.facts a[href="https://ci.dev.example.test/runs/run-7"]',
+    );
     expect(link?.textContent).toContain('run-7');
+    http.verify();
+  });
+
+  /** No qits-ci on this platform, so there is no address to spell and the row says it has none. */
+  it('links nothing for a run when the platform serves no qits-ci', async () => {
+    configure(provideQitsNavigationTree(WITHOUT_CI));
+    await open(bump());
+
+    expect(page().querySelector('.facts a[href^="http"]')).toBeNull();
+    expect(page().querySelector('.facts')?.textContent).not.toContain('run-7');
     http.verify();
   });
 
@@ -149,9 +205,10 @@ describe('BumpPage', () => {
   });
 
   it('says a bump with no run yet has none, rather than linking nowhere', async () => {
+    configure(provideQitsNavigationTree(PLATFORM));
     await open(bump({ status: 'REQUESTED', ciRunId: null, finishedAt: null }));
 
-    expect(page().querySelector('.facts a[href^="/ci/"]')).toBeNull();
+    expect(page().querySelector('.facts a[href^="http"]')).toBeNull();
     http.verify();
   });
 
@@ -202,7 +259,9 @@ describe('BumpPage', () => {
   it('reports a bump that could not be read, and retries it on request', async () => {
     harness = await RouterTestingHarness.create('/bumps/bump-1');
     await settle();
-    http.expectOne(URL).flush({ message: 'no such bump' }, { status: 404, statusText: 'Not Found' });
+    http
+      .expectOne(URL)
+      .flush({ message: 'no such bump' }, { status: 404, statusText: 'Not Found' });
     await settle();
 
     expect(page().textContent).toContain('404 no such bump');

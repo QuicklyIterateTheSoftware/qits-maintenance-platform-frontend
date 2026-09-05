@@ -419,6 +419,13 @@ export interface TrainSummaryDto {
 export interface TrainDto {
   readonly id: string;
   readonly repository: string;
+  /**
+   * qits-projects' id for the releasing repository — the same join every node carries for its
+   * consumer, and there for the same reason: the release-request addresses on that side are keyed
+   * by catalog id, so a station that links its own release needs one. Null where the inventory
+   * cannot place the name, and then no such link is drawn.
+   */
+  readonly repositoryCatalogId: string | null;
   readonly version: string;
   readonly status: TrainStatus;
   readonly createdAt: string;

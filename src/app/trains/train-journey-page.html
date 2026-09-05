@@ -108,6 +108,14 @@
                   @if (row.packages) {
                     <span class="subtle mono">{{ row.packages }}</span>
                   }
+                  <!-- The release itself, in qits-projects. Another application, so an href — and
+                       none at all where the platform cannot spell one. -->
+                  @if (
+                    requestHref(row.train.repositoryCatalogId, row.train.version);
+                    as requestHref
+                  ) {
+                    <a class="request" [href]="requestHref">The release request of this version</a>
+                  }
                   <span class="subtle" [attr.title]="instant(row.train.createdAt)">{{
                     ago(row.train.createdAt)
                   }}</span>
@@ -173,14 +181,17 @@
                       <dd class="subtle">{{ instant(row.node.landedAt) }}</dd>
                     </dl>
 
-                    <!-- Where a link goes. Today it holds the one in-app anchor there is; an
-                         outbound one — the release in qits-projects, the run in qits-ci — belongs
-                         here beside it rather than in a second place further down the row. -->
+                    <!-- Where the links are, in-app and outbound together rather than accreting in
+                         three corners of the panel. An outbound one is an href and is drawn only
+                         where the platform states an address for it. -->
                     <p class="links">
                       @if (row.node.consumerStatus) {
                         <a [routerLink]="[...scoped.commands(), 'repositories', row.node.consumer]"
                           >{{ row.node.consumer }} in the inventory</a
                         >
+                      }
+                      @if (adoptionRequestHref(row.node); as requestHref) {
+                        <a [href]="requestHref">The adopting release’s request</a>
                       }
                       @if (row.child; as child) {
                         <a [routerLink]="[...scoped.commands(), 'trains', child.id]"

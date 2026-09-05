@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink, convertToParamMap } from '@angular/router';
-import { QitsButton } from '@qits/ui-components';
+import { QitsAppLinks, QitsButton } from '@qits/ui-components';
 import { MaintenanceApi } from '../api/maintenance-api';
 import { injectScopedProject } from '../nav/scoped-project';
 import { isTrainSettled, trainEndNote, type TrainDto, type TrainNodeDto } from '../api/dto';
@@ -96,10 +96,16 @@ type JourneyRow = StationRow | NodeRow;
  * page has. A journey drawn fully open would bury the release it is about under three screens of
  * consumers.
  *
- * <p><b>Expanding a node shows what it did, and it is where a link to somewhere else will go.</b>
- * The detail panel carries the consumer, its archetype, what kind of end it is, the version it
- * adopted and when — and a links row, which today holds only the in-app link to the consumer's
- * repository page and is the place an outbound anchor belongs when there is one to draw.
+ * <p><b>Expanding a node shows what it did, and where the rest of the platform says the same
+ * thing.</b> The detail panel carries the consumer, its archetype, what kind of end it is, the
+ * version it adopted and when — and a links row: the in-app link to the consumer's repository page,
+ * and the release request that carried the adoption, which lives in qits-projects.
+ *
+ * <p><b>The outbound anchors are addresses the platform states, never ones this build spells.</b>
+ * `QitsAppLinks.href` answers `undefined` for an application this platform does not serve — and for
+ * one whose navigation has not arrived yet — and the anchor is then not drawn at all. A row with a
+ * link to nowhere is worse than a row without one. They are full-document hrefs on purpose: the
+ * destination is a different Angular application, and a router link there would go nowhere.
  *
  * <p><b>It polls while any train on screen is OPEN, and stops the moment none is.</b> A COMPLETED
  * or SUPERSEDED train is finished — nothing will move in it again — so a journey made entirely of
@@ -119,6 +125,7 @@ export class TrainJourneyPage {
   private readonly api = inject(MaintenanceApi);
   private readonly route = inject(ActivatedRoute);
   private readonly scheduler = inject(QITS_SCHEDULER);
+  private readonly appLinks = inject(QitsAppLinks);
 
   protected readonly none = NONE;
   /** The clock the relative times are drawn against. */
@@ -226,6 +233,44 @@ export class TrainJourneyPage {
   /** When this consumer last did anything: landing if it has, adopting if it has not. */
   protected moved(node: TrainNodeDto): string | null {
     return node.landedAt ?? node.adoptedAt;
+  }
+
+  /**
+   * One release's own request in qits-projects — where the gates, the commits and the artifacts of
+   * it are.
+   *
+   * <p><b>Addressed by CATALOG ID and version</b>, which is the coordinate that side's
+   * `release-requests/by-release/:repoId/:version` resolver takes; the request's own id is minted
+   * there and is not something a train carries. A row whose repository the inventory could not place
+   * has no id and therefore no address, and gets no anchor.
+   *
+   * <p><b>The scope is the PROJECT alone.</b> qits-projects serves that resolver bare and under a
+   * project slug and under no repository-scoped address, so spelling a group and a repository into
+   * it would compose a URL that 404s.
+   */
+  protected requestHref(catalogId: string | null, version: string | null): string | undefined {
+    if (!catalogId || !version) {
+      return undefined;
+    }
+    return this.appLinks.href(
+      'qits-projects',
+      `release-requests/by-release/${encodeURIComponent(catalogId)}/` +
+        `${encodeURIComponent(version)}`,
+      { project: this.scoped.scope().project },
+    );
+  }
+
+  /**
+   * The release of the CONSUMER that took this version — the request the adoption rode in on.
+   *
+   * Only for a node that has adopted: a PENDING one names no version of its own, and the version
+   * column of a train is exactly the consumer's own release, so before it there is nothing to open.
+   */
+  protected adoptionRequestHref(node: TrainNodeDto): string | undefined {
+    if (node.state !== 'ADOPTED' && node.state !== 'LANDED') {
+      return undefined;
+    }
+    return this.requestHref(node.consumerCatalogId, node.adoptedVersion);
   }
 
   /**

@@ -67,8 +67,6 @@
     <dt>CI run</dt>
     <dd>
       @if (ciRunHref(); as href) {
-        <!-- qits-ci is a different application at a different base path, so this is an href and
-             never a router link. -->
         <a [href]="href" class="mono">{{ current.ciRunId }}</a>
       } @else {
         {{ none }}

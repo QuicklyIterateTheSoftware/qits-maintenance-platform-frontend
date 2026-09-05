@@ -1,15 +1,51 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideLocationMocks } from '@angular/common/testing';
+import type { EnvironmentProviders } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { provideQitsNavigationLinks } from '@qits/ui-components';
+import {
+  provideQitsNavigationLinks,
+  provideQitsNavigationTree,
+  provideQitsProjectList,
+  provideQitsScope,
+  type QitsNavigation,
+} from '@qits/ui-components';
 import type { TrainDto, TrainNodeDto } from '../api/dto';
 import { routes } from '../app.routes';
 import { ManualScheduler } from '../testing/manual-scheduler';
 import { QITS_SCHEDULER } from '../ui/scheduler';
 import { POLL_INTERVAL_MS } from './train-journey-page';
+
+/**
+ * The chrome, answered from a literal, with qits-projects served on a host of its own — which is the
+ * shape `QitsAppLinks.href` composes an address for.
+ */
+const PLATFORM: QitsNavigation = {
+  environment: 'dev',
+  origin: 'https://dev.example.test',
+  slots: {
+    platform: [
+      {
+        app: 'qits-projects',
+        label: 'Projects',
+        host: 'projects.dev.example.test',
+        origin: 'https://projects.dev.example.test',
+      },
+    ],
+  },
+  applications: {},
+};
+
+/**
+ * The same platform serving qits-projects nowhere — the "cannot spell it" case, and the only honest
+ * way to make one: `href` answers `undefined` for an application the navigation names in no entry.
+ */
+const WITHOUT_PROJECTS: QitsNavigation = { ...PLATFORM, slots: {} };
+
+/** The projects the chrome knows, so `/qits/…` parses as a project and not as this app's own page. */
+const PROJECTS = [{ id: 'p-1', slug: 'qits', name: 'QITS' }];
 
 /**
  * The journey, one behaviour at a time.
@@ -19,6 +55,9 @@ import { POLL_INTERVAL_MS } from './train-journey-page';
  * following `childTrainId`; **the cycle guard** — a train already asked for is never asked for
  * twice, which is what keeps a loop from being an infinite fetch; and **the polling**, which
  * follows an OPEN train and stops for good when nothing on screen can move again.
+ *
+ * A fourth is the outbound links, which are the one thing here that is not this application's to
+ * spell: they exist where the platform says qits-projects is served and nowhere else.
  */
 describe('TrainJourneyPage', () => {
   let http: HttpTestingController;
@@ -43,6 +82,7 @@ describe('TrainJourneyPage', () => {
   const train = (over: Partial<TrainDto> = {}): TrainDto => ({
     id: 't-1',
     repository: 'qits-eventstream',
+    repositoryCatalogId: 'repo-eventstream',
     version: '2026.905.1',
     status: 'COMPLETED',
     createdAt: '2026-08-21T09:00:00Z',
@@ -53,19 +93,34 @@ describe('TrainJourneyPage', () => {
     ...over,
   });
 
-  beforeEach(() => {
-    scheduler = new ManualScheduler();
+  /**
+   * The providers this page is read with. The navigation is an argument because the outbound links
+   * are what one group of tests is about, and everything else runs with the empty chrome: a table
+   * is not a question about the sidebar. Re-configuring is why the reset is here — the module is
+   * already instantiated by the time a nested `beforeEach` gets to ask for a different platform.
+   */
+  function configure(
+    navigation: EnvironmentProviders = provideQitsNavigationLinks([]),
+    ...extra: readonly EnvironmentProviders[]
+  ): void {
+    TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       providers: [
         provideRouter(routes),
         provideLocationMocks(),
         provideHttpClient(),
         provideHttpClientTesting(),
-        provideQitsNavigationLinks([]),
+        navigation,
+        ...extra,
         { provide: QITS_SCHEDULER, useValue: scheduler },
       ],
     });
     http = TestBed.inject(HttpTestingController);
+  }
+
+  beforeEach(() => {
+    scheduler = new ManualScheduler();
+    configure();
   });
 
   async function settle(rounds = 8): Promise<void> {
@@ -99,6 +154,14 @@ describe('TrainJourneyPage', () => {
 
   async function open(root: TrainDto, id = 't-1'): Promise<void> {
     harness = await RouterTestingHarness.create(`/trains/${id}`);
+    await settle();
+    trainRequest(id).flush(root);
+    await settle();
+  }
+
+  /** The same, at the project-scoped address — which is what an outbound link is composed from. */
+  async function openInProject(root: TrainDto, id = 't-1'): Promise<void> {
+    harness = await RouterTestingHarness.create(`/qits/trains/${id}`);
     await settle();
     trainRequest(id).flush(root);
     await settle();
@@ -300,6 +363,103 @@ describe('TrainJourneyPage', () => {
     expect(page().querySelector('.links a')).toBeNull();
     expect(page().querySelector('.row-detail')?.textContent).toContain('not a repository');
     http.verify();
+  });
+
+  /**
+   * The links out of this application, which are the platform's addresses and not this build's.
+   *
+   * Both are the release request of a version, addressed by catalog id and scoped to the PROJECT
+   * alone — qits-projects serves that resolver under no repository-scoped address — and both are
+   * drawn only where the navigation says qits-projects is served at all.
+   */
+  describe('the release requests in qits-projects', () => {
+    const PROJECTS_ORIGIN = 'https://projects.dev.example.test';
+
+    beforeEach(() => {
+      configure(
+        provideQitsNavigationTree(PLATFORM),
+        provideQitsProjectList(PROJECTS),
+        provideQitsScope('project'),
+      );
+    });
+
+    /**
+     * Every outbound href the journey itself draws. Read off the table rather than off the page,
+     * because the chrome this navigation also fills draws outbound anchors of its own, and they are
+     * the sidebar's business rather than this page's.
+     */
+    function outbound(): readonly string[] {
+      return Array.from(page().querySelectorAll('table a'))
+        .map((anchor) => anchor.getAttribute('href') ?? '')
+        .filter((href) => href.startsWith('http'));
+    }
+
+    it('links the station to the request the released version came out of', async () => {
+      await openInProject(train());
+
+      expect(page().querySelector('.row-station .request')?.textContent).toContain(
+        'The release request of this version',
+      );
+      expect(outbound()).toContain(
+        `${PROJECTS_ORIGIN}/qits/release-requests/by-release/repo-eventstream/2026.905.1`,
+      );
+      http.verify();
+    });
+
+    it('links an adopting consumer to the request its own release rode in on', async () => {
+      await openInProject(train());
+      chevrons()[0].click();
+      await settle();
+
+      expect(page().querySelector('.links')?.textContent).toContain(
+        'The adopting release’s request',
+      );
+      expect(outbound()).toContain(
+        `${PROJECTS_ORIGIN}/qits/release-requests/by-release/r1/2026.905.7`,
+      );
+      http.verify();
+    });
+
+    /** No id to address it by, or nothing adopted yet: a fact about the row, and no anchor for it. */
+    it('draws no request for a station it cannot place, nor for a consumer that has not adopted', async () => {
+      await openInProject(
+        train({
+          repositoryCatalogId: null,
+          nodes: [
+            node({ state: 'PENDING', adoptedVersion: null, adoptedAt: null, landedAt: null }),
+          ],
+        }),
+      );
+      chevrons()[0].click();
+      await settle();
+
+      expect(page().querySelector('.row-station .request')).toBeNull();
+      expect(outbound()).toEqual([]);
+      // The in-app link to the consumer is unaffected: it is this application's own address.
+      expect(page().querySelector('.links a')?.getAttribute('href')).toBe(
+        '/qits/repositories/qits-ci',
+      );
+      http.verify();
+    });
+
+    /** The platform serves no qits-projects, so there is no address to spell and no anchor at all. */
+    it('draws no request anywhere when the platform serves no qits-projects', async () => {
+      configure(
+        provideQitsNavigationTree(WITHOUT_PROJECTS),
+        provideQitsProjectList(PROJECTS),
+        provideQitsScope('project'),
+      );
+      await openInProject(train());
+      chevrons()[0].click();
+      await settle();
+
+      expect(page().querySelector('.row-station .request')).toBeNull();
+      expect(page().querySelector('table')?.textContent).not.toContain(
+        'The adopting release’s request',
+      );
+      expect(outbound()).toEqual([]);
+      http.verify();
+    });
   });
 
   it('polls while a train is open and re-reads it', async () => {
