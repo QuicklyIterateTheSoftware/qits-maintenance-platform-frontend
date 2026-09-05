@@ -5,12 +5,18 @@ import { QITS_SCOPE, scopeCommands, scopePath } from '@qits/ui-components';
 import { filter, map } from 'rxjs';
 
 /**
- * The four views, in the order a reader meets them: two sections, two views each.
+ * The five views, in the order a reader meets them: two inventory sections with two views each, and
+ * the release trains.
  *
  * `segment` is the path *inside* the scope, not the whole address: under `/qits/internal` the
- * project slug is the chrome's business, and this menu is still choosing between the same four
+ * project slug is the chrome's business, and this menu is still choosing between the same five
  * views. It doubles as each entry's key, which is what `selected()` below answers with. `commands`
  * is built from the scope on screen, so a click keeps the reader in it.
+ *
+ * **Release trains get a heading of their own rather than a third Internal entry.** The two
+ * inventory sections answer "what is behind"; a train answers "what is a release of ours doing to
+ * everything downstream", which is not a question about the inventory at all — and filing it under
+ * Internal would put it beside two views it shares no reading with.
  */
 const SECTIONS = [
   {
@@ -27,6 +33,10 @@ const SECTIONS = [
       { segment: 'external/dependencies', label: 'Dependencies' },
     ],
   },
+  {
+    heading: 'Releases',
+    entries: [{ segment: 'trains', label: 'Release trains' }],
+  },
 ] as const;
 
 /**
@@ -39,11 +49,19 @@ const SECTIONS = [
  * place a reader arrives at a repository from inside this app, and it is where "back" means
  * something. Marking nothing would read as a fault; marking External would be a lie.
  *
+ * **A journey and the by-release hop are both Releases › Release trains.** They match on the first
+ * segment alone, which is what keeps `trains/<id>` and `trains/by-release/<repo>/<version>` lit on
+ * the listing they were reached from — and what stops a fourth address under `trains` from having
+ * to be added here.
+ *
  * The bare root and the legacy `/dependencies` both answer with the entry their redirect is heading
  * for, because this menu renders once before the redirect has landed and must not flicker.
  */
 function selected(segments: readonly string[]): string {
   const [first, second] = segments;
+  if (first === 'trains') {
+    return 'trains';
+  }
   if (first === 'external') {
     return second === 'dependencies' ? 'external/dependencies' : 'external';
   }
@@ -56,10 +74,14 @@ function selected(segments: readonly string[]): string {
 /**
  * This application's own menu, under its entry in the platform navigation.
  *
- * <p>Two labelled sections, two entries each, because there are two inventories and two ways into
- * each of them: by repository — "what is this repo behind on" — and by dependency — "who still pins
- * this", or for the internal side "what still ships an old copy of this". The section is the first
- * choice a reader makes, so it is a heading rather than a fifth link.
+ * <p>Two labelled inventory sections with two entries each, because there are two inventories and
+ * two ways into each of them: by repository — "what is this repo behind on" — and by dependency —
+ * "who still pins this", or for the internal side "what still ships an old copy of this". The
+ * section is the first choice a reader makes, so it is a heading rather than a fifth link.
+ *
+ * <p>A third heading, Releases, holds the one view that is not about the inventory: a release train
+ * is what one of our releases is doing to everything downstream of it, read forwards in time rather
+ * than across the catalog.
  *
  * <p>The selection is derived from the router rather than held here: a reader arriving on a deep
  * link, or pressing back, must leave the menu showing the view actually on screen. That is also why

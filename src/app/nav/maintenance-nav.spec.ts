@@ -58,7 +58,7 @@ describe('MaintenanceNav', () => {
     return `${heading[heading.length - 1]?.textContent?.trim()} › ${link.textContent?.trim()}`;
   }
 
-  it('offers two sections with the same two views in each', async () => {
+  it('offers two inventory sections with the same two views in each, and the trains beside them', async () => {
     await mountAt('/');
     const element = fixture.nativeElement as HTMLElement;
 
@@ -66,10 +66,16 @@ describe('MaintenanceNav', () => {
       Array.from(element.querySelectorAll('.section')).map((heading) =>
         heading.textContent?.trim(),
       ),
-    ).toEqual(['Internal', 'External']);
+    ).toEqual(['Internal', 'External', 'Releases']);
     expect(
       Array.from(element.querySelectorAll('a')).map((link) => link.getAttribute('href')),
-    ).toEqual(['/internal', '/internal/dependencies', '/external', '/external/dependencies']);
+    ).toEqual([
+      '/internal',
+      '/internal/dependencies',
+      '/external',
+      '/external/dependencies',
+      '/trains',
+    ]);
   });
 
   /** The bare root is on its way to the internal listing; the menu must not flicker on the way. */
@@ -102,6 +108,21 @@ describe('MaintenanceNav', () => {
 
     await mountAt('/bumps/bump-1');
     expect(current()).toBe('Internal › Repositories');
+  });
+
+  /**
+   * A journey and the by-release hop are not entries of their own: they match on the first segment
+   * alone, so both stay lit on the listing they were reached from.
+   */
+  it('keeps Releases › Release trains current inside a journey and on the by-release hop', async () => {
+    await mountAt('/trains');
+    expect(current()).toBe('Releases › Release trains');
+
+    await mountAt('/trains/t-1');
+    expect(current()).toBe('Releases › Release trains');
+
+    await mountAt('/trains/by-release/qits-eventstream/2026.905.1');
+    expect(current()).toBe('Releases › Release trains');
   });
 
   /** The address the search had before there were two of them, before its redirect lands. */

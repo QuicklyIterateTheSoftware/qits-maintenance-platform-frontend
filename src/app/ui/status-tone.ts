@@ -4,10 +4,15 @@ import type { QitsBadgeTone } from '@qits/ui-components';
  * What colour a status word is, in one place, for every badge on every page.
  *
  * `QitsBadge` takes a *semantic* tone and never a colour, so this file is a translation between two
- * vocabularies rather than styling. Five enums share it — a repository's scan status, a branch's
- * state, a bump's outcome, an artifact's bill of materials and a dependent's currency — because
- * they overlap and never collide: `FAILED` means the same thing on a branch, on a bump and on an
- * ingest, and no word appears in two of them with two meanings.
+ * vocabularies rather than styling. Seven enums share it — a repository's scan status, a branch's
+ * state, a bump's outcome, an artifact's bill of materials, a dependent's currency, a release
+ * train's status and one train node's state — because they overlap and never collide: `FAILED`
+ * means the same thing on a branch, on a bump and on an ingest, and no word appears in two of them
+ * with two meanings.
+ *
+ * **PENDING is the same amber for a train node as for an SBOM**, and that is the shared word
+ * working rather than a collision: both mean "nothing has happened here yet, and something is
+ * expected to".
  *
  * **REQUESTED and RUNNING share the warning tone.** The reader's question is "what is still
  * happening", and a bump queued behind the worker and a bump in flight are the same answer to it.
@@ -44,6 +49,15 @@ const TONES: Readonly<Record<string, QitsBadgeTone>> = {
   CURRENT: 'success',
   BEHIND: 'warning',
   UNKNOWN: 'neutral',
+  // A release train. OPEN is info rather than warning: a train that is still travelling is the
+  // ordinary state of a release an hour old, and amber would call every one of them a problem.
+  // SUPERSEDED is neutral for the same reason — a later release retiring this one is housekeeping.
+  OPEN: 'info',
+  COMPLETED: 'success',
+  SUPERSEDED: 'neutral',
+  // One consumer's progress through a train. PENDING is the amber above, deliberately shared.
+  ADOPTED: 'info',
+  LANDED: 'success',
 };
 
 /**

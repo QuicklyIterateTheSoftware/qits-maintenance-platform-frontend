@@ -63,6 +63,33 @@ export type GroupSource = 'CONFIG' | 'DEFAULT';
 export type SbomStatus = 'PENDING' | 'INGESTED' | 'MISSING' | 'FAILED';
 
 /**
+ * Where a release train stands.
+ *
+ * `SUPERSEDED` is not a failure: a second release of the same repository opens a new train and
+ * retires this one, because nobody is going to adopt the older version now. `supersededBy` names
+ * the train that took over.
+ */
+export type TrainStatus = 'OPEN' | 'COMPLETED' | 'SUPERSEDED';
+
+/**
+ * How far one consumer of a release has got.
+ *
+ * `ADOPTED` means the new version is written somewhere — a branch, a pin — and `LANDED` means it
+ * reached the consumer's own `main`. The two are a day apart on a repository whose gates are slow,
+ * which is the whole reason they are separate words.
+ */
+export type TrainNodeState = 'PENDING' | 'ADOPTED' | 'LANDED';
+
+/**
+ * What kind of end of the line a consumer is, which decides whether the journey continues past it.
+ *
+ * `LINKED` is a repository that pins the package and releases its own version in turn — the only
+ * end that starts a train of its own. The two pins are terminal by construction: a deployment
+ * configuration naming an image, and a daemon naming one, are both adopted and then done.
+ */
+export type TrainEndKind = 'LINKED' | 'CONFIG_IMAGE_PIN' | 'DAEMON_PIN';
+
+/**
  * One maintenance group of a repository, and the branch it bumps on.
  *
  * `kind` and `source` are two different questions. `source` says whether the repository asked for
@@ -330,4 +357,98 @@ export function changeCount(bump: BumpDto): number {
 /** The branch a bump is about — the row's own, or the one its group's name implies. */
 export function bumpBranch(bump: BumpDto): string {
   return bump.branch || `maintenance/${bump.group}`;
+}
+
+/** One thing a release published, which is what the consumers below it pin. */
+export interface TrainPackageDto {
+  readonly ecosystem: string;
+  readonly name: string;
+}
+
+/**
+ * One consumer of a release, and how far it has got with it.
+ *
+ * **`consumer` is not always a repository.** A `LINKED` end names one and carries its catalog id
+ * and status; a `CONFIG_IMAGE_PIN` end names an *application* whose deployment configuration pins
+ * the image, and there is no repository row behind it — which is why `consumerCatalogId` and
+ * `consumerStatus` are both null there, and why a link to a repository page is only ever drawn when
+ * `consumerStatus` is not.
+ *
+ * **`consumerStatus` is the catalog's word, not this train's.** `ABSENT` means the repository the
+ * train was built against is no longer in the catalog: the node will never move, and a journey that
+ * quietly waited on it would look stuck for a reason nothing on screen explained.
+ *
+ * `childTrainId` is the train that this consumer's OWN release opened, and it is what turns a train
+ * into a journey. It is null until the consumer has released — a node can be `LANDED` and still
+ * carry none, for a consumer that landed the bump and has not been released since.
+ */
+export interface TrainNodeDto {
+  readonly id: string;
+  readonly consumer: string;
+  readonly consumerCatalogId: string | null;
+  readonly consumerStatus: RepositoryStatus | null;
+  readonly archetype: string | null;
+  readonly endKind: TrainEndKind;
+  readonly state: TrainNodeState;
+  readonly adoptedVersion: string | null;
+  readonly adoptedAt: string | null;
+  readonly childTrainId: string | null;
+  readonly landedAt: string | null;
+}
+
+/** A train as the listing shows it: one release, and how much of its reach has landed. */
+export interface TrainSummaryDto {
+  readonly id: string;
+  readonly repository: string;
+  readonly version: string;
+  readonly status: TrainStatus;
+  readonly createdAt: string;
+  readonly completedAt: string | null;
+  readonly nodeCount: number;
+  readonly landedCount: number;
+}
+
+/**
+ * One release train: a release of one repository, and every consumer it was meant to reach.
+ *
+ * The service answers one train at a time and never a journey. Following the `childTrainId`s and
+ * stitching the result into a tree is deliberately this application's job — the shape of the
+ * journey is a question about a reading, not a fact the service holds, and a server that walked it
+ * would have to guess how far.
+ */
+export interface TrainDto {
+  readonly id: string;
+  readonly repository: string;
+  readonly version: string;
+  readonly status: TrainStatus;
+  readonly createdAt: string;
+  readonly completedAt: string | null;
+  /** The train that retired this one — a later release of the same repository. */
+  readonly supersededBy: string | null;
+  readonly packages: readonly TrainPackageDto[];
+  readonly nodes: readonly TrainNodeDto[];
+}
+
+/**
+ * What kind of end a node is, in a sentence, or nothing for a kind this build has not been taught.
+ *
+ * The three ends are not three flavours of the same thing: one of them continues the journey and
+ * two of them stop it, and that distinction is invisible from the word alone.
+ */
+export function trainEndNote(endKind: string): string {
+  switch (endKind) {
+    case 'LINKED':
+      return 'a repository that pins this package — its own release carries the journey on';
+    case 'CONFIG_IMAGE_PIN':
+      return 'an application whose deployment configuration pins the image; the journey ends here';
+    case 'DAEMON_PIN':
+      return 'a daemon that pins the image; the journey ends here';
+    default:
+      return '';
+  }
+}
+
+/** A train nothing more will happen to. Only an OPEN one is worth polling. */
+export function isTrainSettled(status: TrainStatus): boolean {
+  return status !== 'OPEN';
 }

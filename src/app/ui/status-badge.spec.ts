@@ -33,6 +33,24 @@ describe('status tone', () => {
     expect(toneOf('SUCCEEDED')).toBe('success');
   });
 
+  /**
+   * A train still travelling is the ordinary state of a release an hour old, and a later release
+   * retiring one is housekeeping. Neither is a warning, and colouring them so would put amber on
+   * most of the listing on most days.
+   */
+  it('reads a travelling train as information and a retired one as a non-event', () => {
+    expect(toneOf('OPEN')).toBe('info');
+    expect(toneOf('COMPLETED')).toBe('success');
+    expect(toneOf('SUPERSEDED')).toBe('neutral');
+  });
+
+  /** The three stages of one consumer, and the amber PENDING already had from the SBOM column. */
+  it('separates a consumer that has not moved from one that adopted and one that landed', () => {
+    expect(toneOf('PENDING')).toBe('warning');
+    expect(toneOf('ADOPTED')).toBe('info');
+    expect(toneOf('LANDED')).toBe('success');
+  });
+
   it('falls back to neutral for a status this build has never heard of', () => {
     expect(toneOf('SOMETHING_NEW')).toBe('neutral');
   });

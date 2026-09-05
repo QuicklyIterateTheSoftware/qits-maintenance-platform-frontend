@@ -1,10 +1,10 @@
 # qits-maintenance-platform-frontend
 
 The maintenance frontend: what every repository in the catalog pins, what the registries have
-released since, what the platform's own releases already ship, and which maintenance branches are
-waiting. Served by qits-platform-maintenance at the root of `maintenance.<env>.<domain>` through
-Quinoa. Six addresses, all inside the platform chrome, and each of them reachable under a project
-slug as well.
+released since, what the platform's own releases already ship, which maintenance branches are
+waiting, and how far each of our own releases has travelled downstream. Served by
+qits-platform-maintenance at the root of `maintenance.<env>.<domain>` through Quinoa. Nine
+addresses, all inside the platform chrome, and each of them reachable under a project slug as well.
 
 **The first segment is the section, and it is the organising idea of the application.** `internal`
 is what this platform publishes and can release; `external` is what the world publishes and
@@ -23,14 +23,23 @@ by different readers: internal is release work, external is patching.
   repository's artifacts, a panel per group with `Create branch now`, and the bumps it has had.
 - **`/bumps/<id>`** — one bump: the branch, the changes sent, the CI run, and what the release ask
   answered.
+- **`/trains?repository=<name>`** — recent release trains, newest release first: repository,
+  version, when it was created, `landed/total`, status. The filter is a query parameter and it is
+  the service's, not a filter applied after the rows arrive.
+- **`/trains/<id>`** — one journey. The root release, every consumer under it, and the trains those
+  consumers' own releases opened, grafted in as expandable subtrees. See below.
+- **`/trains/by-release/<repository>/<version>`** — the address a link from a *release* lands on: it
+  asks the service which train that release opened and replaces itself with `/trains/<id>`.
 - **`/`** redirects to `/internal`, and **`/dependencies`** — the search's address when there was
   only one of them — redirects to `/internal/dependencies` with its query parameters intact.
 
 ## The project in the address
 
 This app is **project scoped**: `/qits/internal` is the same page as `/internal`. The literal routes
-are matched first, so `internal`, `external`, `repositories`, `dependencies` and `bumps` stay this
-app's own pages and never read as projects of those names.
+are matched first, so `internal`, `external`, `repositories`, `dependencies`, `bumps` and `trains`
+stay this app's own pages and never read as projects of those names. Inside `trains`, the same rule
+applies one level down: `trains/by-release/:repository/:version` is declared before `trains/:id`,
+and matched the other way round every release link would ask for a train called `by-release`.
 
 The scope is read from the address by `@qits/ui-components` (`provideQitsScope('project')`), never
 from a route parameter, so one component serves both forms. It is drawn in the page header and
@@ -65,9 +74,21 @@ a `409`, and that is drawn as a sentence. The group's button is also disabled wh
 running, but only as a courtesy — the rule stays in one place, and a bump the schedule started a
 second before a click is a state no page can have seen.
 
-**Polling stops.** A page re-reads every two seconds while something it can see is unfinished, one
-request in flight at a time, and stops for good when nothing is. A poll that fails leaves the last
-good answer on screen and says so above it.
+**The journey is stitched here, not served.** The service answers one release train at a time: a
+release, and the consumers that were meant to take it. Each consumer that releases in turn opens a
+train of its own, named by `childTrainId` on the node, and following those links and merging the
+answers into one tree is the journey page's whole job. It is a frontend job on purpose — how far to
+follow is a question about a reading, and a server that walked it would have to guess. The walk is
+breadth-first, never asks for a train twice (so a diamond costs one request and a loop none), and
+stops at ten levels; a node whose train is past that edge, or whose read failed, gets a link to that
+train's own page rather than silence.
+
+**Polling stops.** A page re-reads while something it can see is unfinished, one request in flight
+at a time, and stops for good when nothing is. Two seconds for a bump or a scan, five for a journey
+— a train moves when a consumer's CI lands a bump, which is minutes, and one journey poll is one
+request per train stitched. The trains listing does not poll at all: a listing of recent releases
+moves when a release happens, and the reader watching one travel is a click away on a page that
+does. A poll that fails leaves the last good answer on screen and says so above it.
 
 **A scan is followed by watching the rows it moves.** `POST /scans` answers an id and the contract
 has no `GET /scans/{id}`, so "it finished" can only be read off `lastScanAt` — against the server's
@@ -80,7 +101,7 @@ option: same-origin sends the cookie by default.
 
 ## The contract it consumes
 
-Ten calls, pinned in the superproject's `qits-maintenance-plan.md` ("API"):
+Thirteen calls, pinned in the superproject's `qits-maintenance-plan.md` ("API"):
 
 ```
 GET  /maintenance/api/repositories                                  → [{name, project, lastScanAt, headSha, status, message, pending, groups:[{name, source, kind, branch, state, headSha, pending}]}]
@@ -93,9 +114,12 @@ POST /maintenance/api/scans {scope, repository?}                    → 202 {id}
 POST /maintenance/api/repositories/{name}/groups/{group}/bumps      → 202 {id}   (409 while one is active)
 GET  /maintenance/api/bumps?repository=&limit=20                    → [bump rows]
 GET  /maintenance/api/bumps/{id}                                    → one bump row
+GET  /maintenance/api/trains?repository=&limit=50                   → [{id, repository, version, status, createdAt, completedAt, nodeCount, landedCount}]
+GET  /maintenance/api/trains/{id}                                   → {id, repository, version, status, createdAt, completedAt, supersededBy, packages:[{ecosystem, name}], nodes:[{id, consumer, consumerCatalogId, consumerStatus, archetype, endKind, state, adoptedVersion, adoptedAt, childTrainId, landedAt}]}
+GET  /maintenance/api/trains/by-release?repository=&version=        → the byte-identical train document (404 for a release that opened none)
 ```
 
-Six things the JSON shape alone does not say, and which these pages depend on:
+Nine things the JSON shape alone does not say, and which these pages depend on:
 
 - **The reads answer bare arrays and bare objects, not envelopes.** No `{items: […]}` wrapper.
 - **A bump row spells its group as `group` and its CI ids as `ciEventId` / `ciRunId`**, and may
@@ -110,6 +134,19 @@ Six things the JSON shape alone does not say, and which these pages depend on:
   came back to hold on to) and `refused`. Both are rendered as they arrive and never linked. The id
   names an OPEN release request in qits-projects, not a release: the quality gates settle it and Auto
   Release tags it afterwards.
+- **A train node's `consumer` is not always a repository.** A `LINKED` end names one and carries its
+  catalog id and status; a `CONFIG_IMAGE_PIN` end names an *application* whose deployment
+  configuration pins the image, and both `consumerCatalogId` and `consumerStatus` are null there.
+  The link to a repository page is drawn only when `consumerStatus` is not — that field, and not the
+  end kind, is what says whether there is a repository behind the name.
+- **`consumerStatus: "ABSENT"` means the consumer left the catalog.** The node will never move, and
+  the row says so, because a journey waiting on it silently would look stuck for no visible reason.
+- **`childTrainId` is null until the consumer has released.** A node can be `LANDED` and carry none:
+  it took the bump and has not been released since. Only a `LINKED` end ever gets one — the two pin
+  kinds are terminal by construction.
+- **`GET /trains/by-release` answers the byte-identical document to `GET /trains/{id}`**, and its
+  404 is ordinary rather than a fault: most releases the platform has made predate train tracking,
+  and a release nothing consumes opens no train. A half-built link — one of the pair — is a 400.
 
 ## How it is served
 

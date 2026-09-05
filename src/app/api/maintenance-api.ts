@@ -13,6 +13,8 @@ import type {
   RepositoryDetailDto,
   RepositoryDto,
   ScanScope,
+  TrainDto,
+  TrainSummaryDto,
 } from './dto';
 
 /**
@@ -156,6 +158,50 @@ export class MaintenanceApi {
   bump(id: string): Promise<BumpDto> {
     return firstValueFrom(
       this.http.get<BumpDto>(`${this.base}/maintenance/api/bumps/${encodeURIComponent(id)}`),
+    );
+  }
+
+  /**
+   * Recent release trains, newest first, for one repository or for all of them.
+   *
+   * The order is the SERVICE's, for the reason `bumps` gives. `limit` is clamped to 1..200 there,
+   * so a caller asking for more gets 200 and not an error.
+   */
+  trains(repository?: string, limit = 50): Promise<readonly TrainSummaryDto[]> {
+    let params = new HttpParams().set('limit', limit);
+    if (repository) {
+      params = params.set('repository', repository);
+    }
+    return firstValueFrom(
+      this.http.get<TrainSummaryDto[]>(`${this.base}/maintenance/api/trains`, { params }),
+    );
+  }
+
+  /**
+   * One train with every consumer of the release it is about.
+   *
+   * This is the call the journey view makes over and over: the service answers one train, the tree
+   * is stitched here by following each node's `childTrainId` back into this method.
+   */
+  train(id: string): Promise<TrainDto> {
+    return firstValueFrom(
+      this.http.get<TrainDto>(`${this.base}/maintenance/api/trains/${encodeURIComponent(id)}`),
+    );
+  }
+
+  /**
+   * The same document, addressed by the release it is about rather than by the train's id.
+   *
+   * It exists because a linker — a release request, a chat message — has a repository and a version
+   * and never the train's id, which is minted here. Both halves are query parameters rather than
+   * segments: a version is safe in a path but a repository name need not be, and the pair is one
+   * question. A 404 is the ordinary answer for a release from before trains were recorded.
+   */
+  trainByRelease(repository: string, version: string): Promise<TrainDto> {
+    return firstValueFrom(
+      this.http.get<TrainDto>(`${this.base}/maintenance/api/trains/by-release`, {
+        params: new HttpParams().set('repository', repository).set('version', version),
+      }),
     );
   }
 

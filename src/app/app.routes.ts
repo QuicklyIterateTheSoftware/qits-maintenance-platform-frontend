@@ -3,7 +3,7 @@ import { QitsMainLayout } from '@qits/ui-components';
 import { NotFound } from './not-found/not-found';
 
 /**
- * Six addresses, all of them inside the platform chrome, and two of them redirects.
+ * Nine addresses, all of them inside the platform chrome, and two of them redirects.
  *
  * **The first segment is the SECTION, and it is the organising idea of the whole application.**
  * `internal` is what this platform publishes and can release; `external` is what the world
@@ -27,6 +27,14 @@ import { NotFound } from './not-found/not-found';
  * page for what `GET /maintenance/api/repositories/qits-ci` answers, and `/maintenance/bumps/<id>`
  * for `GET /maintenance/api/bumps/<id>`. Both stay section-neutral: a repository's page shows both
  * halves of what it pins, and a bump belongs to one group rather than to one section.
+ *
+ * **A release train has three addresses and only two of them are pages.** `trains` is the listing,
+ * `trains/:id` is one journey, and `trains/by-release/:repository/:version` is the address a link
+ * from a *release* lands on — a component that asks the service which train that release opened and
+ * then replaces itself with the journey. It exists because a linker has a repository and a version
+ * and never the train's id, which is minted here. **It is declared before `trains/:id`, and the
+ * order is load-bearing**: a parameter segment listed first would swallow the literal, and every
+ * release link would ask for a train whose id is the word `by-release`.
  *
  * **The dependency views' state is in query parameters, not segments.** `?name=@qits/*` on the
  * external search, `?ecosystem=&name=` on the internal one: both hold slashes, colons and
@@ -71,6 +79,20 @@ const OWN: Routes = [
     path: 'bumps/:id',
     loadComponent: () => import('./bumps/bump-page').then((m) => m.BumpPage),
   },
+  {
+    path: 'trains',
+    loadComponent: () => import('./trains/trains-page').then((m) => m.TrainsPage),
+  },
+  // Before `trains/:id`, and the order is the whole guard — see the note above.
+  {
+    path: 'trains/by-release/:repository/:version',
+    loadComponent: () =>
+      import('./trains/train-by-release-resolver').then((m) => m.TrainByReleaseResolver),
+  },
+  {
+    path: 'trains/:id',
+    loadComponent: () => import('./trains/train-journey-page').then((m) => m.TrainJourneyPage),
+  },
   // The address the dependency search had when there was only one of them.
   { path: 'dependencies', pathMatch: 'full', redirectTo: 'internal/dependencies' },
 ];
@@ -79,8 +101,9 @@ const OWN: Routes = [
  * The same addresses under a project slug — `/qits/internal` beside `/internal`.
  *
  * **Order is the whole guard.** The literal routes above are matched first, so `internal`,
- * `external`, `repositories`, `dependencies` and `bumps` stay this app's own pages and never read
- * as projects of those names; only what none of them claim falls through to `:project`. A page
+ * `external`, `repositories`, `dependencies`, `bumps` and `trains` stay this app's own pages and
+ * never read as projects of those names; only what none of them claim falls through to `:project`.
+ * A page
  * never reads this parameter: it asks `QITS_SCOPE`, which parses the address the same way in both
  * forms, so one component serves both.
  *
