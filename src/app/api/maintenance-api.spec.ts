@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { MaintenanceApi } from './maintenance-api';
 
 /**
- * The thirteen calls, at the addresses qits-platform-maintenance serves them at.
+ * The twelve calls, at the addresses qits-platform-maintenance serves them at.
  *
  * The assertions worth having are the ones that are invisible on screen when they are wrong:
  * **every path is relative**, because a configured origin would leave the edge's session cookie
@@ -181,62 +181,51 @@ describe('MaintenanceApi', () => {
     expect((await bump).id).toBe('bump-1');
   });
 
-  it('lists the release trains for one repository, and for all of them', async () => {
-    const mine = api.trains('qits-eventstream');
-    const listing = http.expectOne((candidate) => candidate.url === '/maintenance/api/trains');
-    expect(listing.request.method).toBe('GET');
-    expect(listing.request.params.get('repository')).toBe('qits-eventstream');
-    expect(listing.request.params.get('limit')).toBe('50');
-    listing.flush([{ id: 't-1', repository: 'qits-eventstream', nodeCount: 2, landedCount: 1 }]);
-    expect((await mine)[0].id).toBe('t-1');
+  /** The dependents followed to the end, at the repository's own address beside them. */
+  it('asks what is downstream of a repository at the repository’s own address', async () => {
+    const downstream = api.downstream('qits-eventstream');
 
-    const all = api.trains();
-    const every = http.expectOne((candidate) => candidate.url === '/maintenance/api/trains');
-    expect(every.request.params.has('repository')).toBe(false);
-    every.flush([]);
-    await all;
-  });
-
-  it('reads one train by id', async () => {
-    const train = api.train('t-1');
-
-    const request = http.expectOne('/maintenance/api/trains/t-1');
+    const request = http.expectOne('/maintenance/api/repositories/qits-eventstream/downstream');
     expect(request.request.method).toBe('GET');
-    request.flush({ id: 't-1', nodes: [] });
+    request.flush({
+      repository: 'qits-eventstream',
+      catalogId: 'repo-eventstream',
+      downstream: [
+        {
+          repository: 'qits-ci-frontend',
+          catalogId: 'r1',
+          archetype: 'FRONTEND',
+          depth: 1,
+          via: [],
+        },
+      ],
+    });
 
-    expect((await train).id).toBe('t-1');
+    expect((await downstream).downstream[0].repository).toBe('qits-ci-frontend');
   });
 
   /**
-   * The same document by the release it is about. Both halves are query parameters and neither is a
-   * segment: the pair is one question, and the service answers 400 to half of it.
+   * The journey of one release, by the release it is about. Both halves are query parameters and
+   * neither is a segment: the pair is one question, and the service answers 400 to half of it.
    */
-  it('asks for a train by release with both halves as query parameters', async () => {
-    const train = api.trainByRelease('qits-eventstream', '2026.905.1');
+  it('asks for an adoption journey with both halves as query parameters', async () => {
+    const journey = api.adoptionByRelease('qits-eventstream', '2026.905.1');
 
     const request = http.expectOne(
-      (candidate) => candidate.url === '/maintenance/api/trains/by-release',
+      (candidate) => candidate.url === '/maintenance/api/adoption/by-release',
     );
     expect(request.request.method).toBe('GET');
     expect(request.request.params.get('repository')).toBe('qits-eventstream');
     expect(request.request.params.get('version')).toBe('2026.905.1');
-    request.flush({ id: 't-1', nodes: [] });
+    request.flush({
+      repository: 'qits-eventstream',
+      catalogId: 'repo-eventstream',
+      version: '2026.905.1',
+      packages: [{ ecosystem: 'maven', name: 'eu.wohlben.qits:qits-eventstream' }],
+      adopters: [],
+    });
 
-    expect((await train).id).toBe('t-1');
-  });
-
-  /** A release from before trains were recorded, which is the ordinary answer and not a fault. */
-  it('lets the by-release 404 through to the caller as a 404', async () => {
-    const train = api.trainByRelease('qits-ci', '2026.101.1');
-
-    http
-      .expectOne((candidate) => candidate.url === '/maintenance/api/trains/by-release')
-      .flush(
-        { message: 'no release train for qits-ci 2026.101.1' },
-        { status: 404, statusText: 'Not Found' },
-      );
-
-    await expect(train).rejects.toMatchObject({ status: 404 });
+    expect((await journey).version).toBe('2026.905.1');
   });
 
   it('percent-encodes a name, a group and an id rather than pasting them into the path', async () => {
@@ -250,9 +239,11 @@ describe('MaintenanceApi', () => {
       .flush({ id: 'x' }, { status: 202, statusText: 'Accepted' });
     await bump;
 
-    const train = api.train('t/1');
-    http.expectOne('/maintenance/api/trains/t%2F1').flush({ id: 't/1', nodes: [] });
-    await train;
+    const downstream = api.downstream('a/b');
+    http
+      .expectOne('/maintenance/api/repositories/a%2Fb/downstream')
+      .flush({ repository: 'a/b', catalogId: null, downstream: [] });
+    await downstream;
   });
 
   it('rejects with the service’s own message rather than swallowing it', async () => {

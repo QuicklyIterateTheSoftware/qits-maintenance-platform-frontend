@@ -3,7 +3,7 @@ import { QitsMainLayout } from '@qits/ui-components';
 import { NotFound } from './not-found/not-found';
 
 /**
- * Nine addresses, all of them inside the platform chrome, and two of them redirects.
+ * Ten addresses, all of them inside the platform chrome, and three of them redirects.
  *
  * **The first segment is the SECTION, and it is the organising idea of the whole application.**
  * `internal` is what this platform publishes and can release; `external` is what the world
@@ -28,13 +28,19 @@ import { NotFound } from './not-found/not-found';
  * for `GET /maintenance/api/bumps/<id>`. Both stay section-neutral: a repository's page shows both
  * halves of what it pins, and a bump belongs to one group rather than to one section.
  *
- * **A release train has three addresses and only two of them are pages.** `trains` is the listing,
- * `trains/:id` is one journey, and `trains/by-release/:repository/:version` is the address a link
- * from a *release* lands on — a component that asks the service which train that release opened and
- * then replaces itself with the journey. It exists because a linker has a repository and a version
- * and never the train's id, which is minted here. **It is declared before `trains/:id`, and the
- * order is load-bearing**: a parameter segment listed first would swallow the literal, and every
- * release link would ask for a train whose id is the word `by-release`.
+ * **A release is addressed by what it is, not by an id this application minted.**
+ * `adoption/:repository/:version` is the whole of the adoption journey: a linker — a release
+ * request, a CI run, a chat message — has a repository and a version, and the service answers the
+ * journey of that pair per request. There is nothing to resolve first and no id to look up, which
+ * is why this is a plain page where the release trains needed a resolver component in front of one.
+ *
+ * **`trains/by-release/:repository/:version` is kept as a redirect to it.** The release trains are
+ * retired, but that address is in links qits-projects has already published, and the two carry the
+ * same pair of parameters — so the redirect substitutes them and the old link opens the new page.
+ * Nothing else under `trains` survives, and nothing is added to bury it: `trains/:id` named a
+ * document that no longer exists and falls through to the wildcard, and the bare `trains` is not
+ * one of this app's segments any more, so it reads as a project of that name — the same answer any
+ * unknown first segment gets, and the one the reader of a stale bookmark can act on.
  *
  * **The dependency views' state is in query parameters, not segments.** `?name=@qits/*` on the
  * external search, `?ecosystem=&name=` on the internal one: both hold slashes, colons and
@@ -80,18 +86,14 @@ const OWN: Routes = [
     loadComponent: () => import('./bumps/bump-page').then((m) => m.BumpPage),
   },
   {
-    path: 'trains',
-    loadComponent: () => import('./trains/trains-page').then((m) => m.TrainsPage),
+    path: 'adoption/:repository/:version',
+    loadComponent: () => import('./adoption/adoption-page').then((m) => m.AdoptionPage),
   },
-  // Before `trains/:id`, and the order is the whole guard — see the note above.
+  // The address a release link landed on while the release trains existed. Both parameters carry
+  // across into the redirect, so a link published before this change opens the journey it meant.
   {
     path: 'trains/by-release/:repository/:version',
-    loadComponent: () =>
-      import('./trains/train-by-release-resolver').then((m) => m.TrainByReleaseResolver),
-  },
-  {
-    path: 'trains/:id',
-    loadComponent: () => import('./trains/train-journey-page').then((m) => m.TrainJourneyPage),
+    redirectTo: 'adoption/:repository/:version',
   },
   // The address the dependency search had when there was only one of them.
   { path: 'dependencies', pathMatch: 'full', redirectTo: 'internal/dependencies' },
@@ -101,8 +103,9 @@ const OWN: Routes = [
  * The same addresses under a project slug — `/qits/internal` beside `/internal`.
  *
  * **Order is the whole guard.** The literal routes above are matched first, so `internal`,
- * `external`, `repositories`, `dependencies`, `bumps` and `trains` stay this app's own pages and
- * never read as projects of those names; only what none of them claim falls through to `:project`.
+ * `external`, `repositories`, `dependencies`, `bumps`, `adoption` and the retired `trains` stay
+ * this app's own addresses and never read as projects of those names; only what none of them claim
+ * falls through to `:project`.
  * A page
  * never reads this parameter: it asks `QITS_SCOPE`, which parses the address the same way in both
  * forms, so one component serves both.

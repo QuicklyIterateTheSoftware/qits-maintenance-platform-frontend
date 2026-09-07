@@ -23,9 +23,9 @@ const STUB_ROUTES: Routes = [{ path: '**', component: Blank }];
  * The sub-navigation, which is the whole navigation of this app.
  *
  * One rule, asserted in both directions: the URL decides which entry is current — including for the
- * pages that are not entries of their own, a repository and a bump, which belong to Internal ›
- * Repositories, and including the two addresses that only ever exist for the instant before their
- * redirect lands.
+ * pages that are not entries of their own, a repository, a bump and an adoption journey, which all
+ * belong to Internal › Repositories, and including the two addresses that only ever exist for the
+ * instant before their redirect lands.
  */
 describe('MaintenanceNav', () => {
   let router: Router;
@@ -58,7 +58,7 @@ describe('MaintenanceNav', () => {
     return `${heading[heading.length - 1]?.textContent?.trim()} › ${link.textContent?.trim()}`;
   }
 
-  it('offers two inventory sections with the same two views in each, and the trains beside them', async () => {
+  it('offers two inventory sections with the same two views in each, and nothing else', async () => {
     await mountAt('/');
     const element = fixture.nativeElement as HTMLElement;
 
@@ -66,16 +66,10 @@ describe('MaintenanceNav', () => {
       Array.from(element.querySelectorAll('.section')).map((heading) =>
         heading.textContent?.trim(),
       ),
-    ).toEqual(['Internal', 'External', 'Releases']);
+    ).toEqual(['Internal', 'External']);
     expect(
       Array.from(element.querySelectorAll('a')).map((link) => link.getAttribute('href')),
-    ).toEqual([
-      '/internal',
-      '/internal/dependencies',
-      '/external',
-      '/external/dependencies',
-      '/trains',
-    ]);
+    ).toEqual(['/internal', '/internal/dependencies', '/external', '/external/dependencies']);
   });
 
   /** The bare root is on its way to the internal listing; the menu must not flicker on the way. */
@@ -99,30 +93,19 @@ describe('MaintenanceNav', () => {
   });
 
   /**
-   * A repository and a bump name no section — a repository page shows both halves of what it pins.
-   * They still have to light something, and Internal › Repositories is where they were reached from.
+   * A repository, a bump and an adoption journey name no section — a repository page shows both
+   * halves of what it pins, and a journey is about one release. They still have to light something,
+   * and Internal › Repositories is where a reader of any of them was reached from.
    */
-  it('keeps Internal › Repositories current inside a repository and inside a bump', async () => {
+  it('keeps Internal › Repositories current inside a repository, a bump and a journey', async () => {
     await mountAt('/repositories/qits-ci');
     expect(current()).toBe('Internal › Repositories');
 
     await mountAt('/bumps/bump-1');
     expect(current()).toBe('Internal › Repositories');
-  });
 
-  /**
-   * A journey and the by-release hop are not entries of their own: they match on the first segment
-   * alone, so both stay lit on the listing they were reached from.
-   */
-  it('keeps Releases › Release trains current inside a journey and on the by-release hop', async () => {
-    await mountAt('/trains');
-    expect(current()).toBe('Releases › Release trains');
-
-    await mountAt('/trains/t-1');
-    expect(current()).toBe('Releases › Release trains');
-
-    await mountAt('/trains/by-release/qits-eventstream/2026.905.1');
-    expect(current()).toBe('Releases › Release trains');
+    await mountAt('/adoption/qits-eventstream/2026.905.1');
+    expect(current()).toBe('Internal › Repositories');
   });
 
   /** The address the search had before there were two of them, before its redirect lands. */

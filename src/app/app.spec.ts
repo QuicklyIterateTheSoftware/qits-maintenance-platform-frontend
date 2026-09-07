@@ -81,6 +81,9 @@ describe('App', () => {
     http
       .expectOne('/maintenance/api/repositories/qits-ci/dependents')
       .flush({ repository: 'qits-ci', artifacts: [] });
+    http
+      .expectOne('/maintenance/api/repositories/qits-ci/downstream')
+      .flush({ repository: 'qits-ci', catalogId: null, downstream: [] });
     await harness.fixture.whenStable();
 
     const layout = harness.routeNativeElement as HTMLElement;

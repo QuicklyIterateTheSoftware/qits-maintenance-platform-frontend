@@ -5,18 +5,17 @@ import { QITS_SCOPE, scopeCommands, scopePath } from '@qits/ui-components';
 import { filter, map } from 'rxjs';
 
 /**
- * The five views, in the order a reader meets them: two inventory sections with two views each, and
- * the release trains.
+ * The four views, in the order a reader meets them: two inventory sections with two views each.
  *
  * `segment` is the path *inside* the scope, not the whole address: under `/qits/internal` the
- * project slug is the chrome's business, and this menu is still choosing between the same five
+ * project slug is the chrome's business, and this menu is still choosing between the same four
  * views. It doubles as each entry's key, which is what `selected()` below answers with. `commands`
  * is built from the scope on screen, so a click keeps the reader in it.
  *
- * **Release trains get a heading of their own rather than a third Internal entry.** The two
- * inventory sections answer "what is behind"; a train answers "what is a release of ours doing to
- * everything downstream", which is not a question about the inventory at all — and filing it under
- * Internal would put it beside two views it shares no reading with.
+ * **There is no Releases heading any more.** It held the release trains, which were a listing
+ * because they were rows this service stored; what replaced them — the adoption journey of one
+ * release — is evaluated per request and has no listing to be an entry for. It is reached from a
+ * release, which is where the reader already is when they ask the question.
  */
 const SECTIONS = [
   {
@@ -33,35 +32,24 @@ const SECTIONS = [
       { segment: 'external/dependencies', label: 'Dependencies' },
     ],
   },
-  {
-    heading: 'Releases',
-    entries: [{ segment: 'trains', label: 'Release trains' }],
-  },
 ] as const;
 
 /**
  * Which entry the address on screen belongs to, as that entry's own segment.
  *
- * **A repository page and a bump page are internal.** Neither is an entry — both are reached by
- * following a link — and neither names a section: a repository's page shows both halves of what it
- * pins, and a bump belongs to a group rather than to a section. They still have to leave *some*
- * entry lit, and it is Internal › Repositories: that listing is the front door, it is the only
- * place a reader arrives at a repository from inside this app, and it is where "back" means
- * something. Marking nothing would read as a fault; marking External would be a lie.
- *
- * **A journey and the by-release hop are both Releases › Release trains.** They match on the first
- * segment alone, which is what keeps `trains/<id>` and `trains/by-release/<repo>/<version>` lit on
- * the listing they were reached from — and what stops a fourth address under `trains` from having
- * to be added here.
+ * **A repository page, a bump page and an adoption journey are internal.** None of them is an entry
+ * — each is reached by following a link — and none names a section: a repository's page shows both
+ * halves of what it pins, a bump belongs to a group rather than to a section, and a journey is
+ * about one release of one repository. They still have to leave *some* entry lit, and it is
+ * Internal › Repositories: that listing is the front door, it is the only place a reader arrives at
+ * a repository from inside this app, and it is where "back" means something. Marking nothing would
+ * read as a fault; marking External would be a lie.
  *
  * The bare root and the legacy `/dependencies` both answer with the entry their redirect is heading
  * for, because this menu renders once before the redirect has landed and must not flicker.
  */
 function selected(segments: readonly string[]): string {
   const [first, second] = segments;
-  if (first === 'trains') {
-    return 'trains';
-  }
   if (first === 'external') {
     return second === 'dependencies' ? 'external/dependencies' : 'external';
   }
@@ -79,9 +67,9 @@ function selected(segments: readonly string[]): string {
  * "who still pins this", or for the internal side "what still ships an old copy of this". The
  * section is the first choice a reader makes, so it is a heading rather than a fifth link.
  *
- * <p>A third heading, Releases, holds the one view that is not about the inventory: a release train
- * is what one of our releases is doing to everything downstream of it, read forwards in time rather
- * than across the catalog.
+ * <p>Everything else this application draws — a repository, a bump, the adoption journey of one
+ * release — is reached from one of those four and has no entry of its own. A menu entry is for a
+ * question a reader arrives with; the rest are questions the pages hand them.
  *
  * <p>The selection is derived from the router rather than held here: a reader arriving on a deep
  * link, or pressing back, must leave the menu showing the view actually on screen. That is also why

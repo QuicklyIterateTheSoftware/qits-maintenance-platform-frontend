@@ -8,6 +8,7 @@ import { provideQitsNavigationLinks } from '@qits/ui-components';
 import type {
   BumpDto,
   DependentDto,
+  DownstreamDto,
   PinDto,
   RepositoryDependentsDto,
   RepositoryDetailDto,
@@ -33,6 +34,7 @@ describe('RepositoryPage', () => {
 
   const DETAIL_URL = '/maintenance/api/repositories/qits-ci';
   const DEPENDENTS_URL = '/maintenance/api/repositories/qits-ci/dependents';
+  const DOWNSTREAM_URL = '/maintenance/api/repositories/qits-ci/downstream';
   const BUMPS_URL = '/maintenance/api/bumps';
   const BUMP_URL = '/maintenance/api/repositories/qits-ci/groups/dependencies/bumps';
 
@@ -100,6 +102,13 @@ describe('RepositoryPage', () => {
     ],
   });
 
+  const downstream = (over: Partial<DownstreamDto> = {}): DownstreamDto => ({
+    repository: 'qits-ci',
+    catalogId: 'repo-ci',
+    downstream: [],
+    ...over,
+  });
+
   const bump = (over: Partial<BumpDto> = {}): BumpDto => ({
     id: 'bump-1',
     repository: 'qits-ci',
@@ -157,16 +166,24 @@ describe('RepositoryPage', () => {
     );
   }
 
+  function downstreamRequest() {
+    return http.expectOne(
+      (candidate) => candidate.url === DOWNSTREAM_URL && candidate.method === 'GET',
+    );
+  }
+
   async function open(
     repository: RepositoryDetailDto,
     bumps: readonly BumpDto[],
     consumers: RepositoryDependentsDto = dependents(),
+    reach: DownstreamDto = downstream(),
   ): Promise<void> {
     harness = await RouterTestingHarness.create('/repositories/qits-ci');
     await settle();
     detailRequest().flush(repository);
     bumpsRequest().flush(bumps);
     dependentsRequest().flush(consumers);
+    downstreamRequest().flush(reach);
     await settle();
   }
 
@@ -321,8 +338,57 @@ describe('RepositoryPage', () => {
     http.verify();
   });
 
+  /**
+   * The other direction followed to the end: not who consumes this repository, but who consumes
+   * them as well — which is what a release of it is going to reach.
+   */
+  it('lists what is downstream with its distance and the chain that reached it', async () => {
+    await open(
+      detail(),
+      [],
+      dependents(),
+      downstream({
+        downstream: [
+          {
+            repository: 'qits-ci-frontend',
+            catalogId: 'r1',
+            archetype: 'FRONTEND',
+            depth: 1,
+            via: [],
+          },
+          {
+            repository: 'qits-ci-service',
+            catalogId: 'r2',
+            archetype: 'SERVICE',
+            depth: 2,
+            via: ['qits-ci-frontend'],
+          },
+        ],
+      }),
+    );
+
+    const table = page().querySelector('app-downstream-table');
+    const rows = table?.querySelectorAll('tbody tr') ?? [];
+    expect(rows[0].textContent).toContain('qits-ci-frontend');
+    expect(rows[0].querySelector('a')?.getAttribute('href')).toBe('/repositories/qits-ci-frontend');
+    expect(rows[1].textContent).toContain('qits-ci-service');
+    // The hop that a one-level answer would have missed, and what it was reached through.
+    expect(rows[1].textContent).toContain('2');
+    expect(rows[1].textContent).toContain('qits-ci-frontend');
+    expect(table?.querySelector('caption')?.textContent).toContain('2 repositories downstream');
+    http.verify();
+  });
+
+  it('says nothing is downstream of a repository rather than drawing an empty table', async () => {
+    await open(detail(), []);
+
+    expect(page().querySelector('app-downstream-table')).toBeNull();
+    expect(page().textContent).toContain('Nothing on the platform is downstream');
+    http.verify();
+  });
+
   /** A release is a fact that happened: a bump cannot move it, so the poll never re-reads it. */
-  it('never re-reads the dependents while it polls a running bump', async () => {
+  it('never re-reads the dependents or the closure while it polls a running bump', async () => {
     await open(detail(), [bump({ status: 'RUNNING', finishedAt: null })]);
 
     scheduler.fire(POLL_INTERVAL_MS);
@@ -331,7 +397,7 @@ describe('RepositoryPage', () => {
     bumpsRequest().flush([bump({ status: 'SUCCEEDED' })]);
     await settle();
 
-    // No dependents request to flush: http.verify() is the assertion.
+    // No dependents and no downstream request to flush: http.verify() is the assertion.
     http.verify();
   });
 
@@ -431,6 +497,7 @@ describe('RepositoryPage', () => {
     detailRequest().flush({ message: 'no such repository' }, { status: 404, statusText: 'Not Found' });
     bumpsRequest().flush([]);
     dependentsRequest().flush(dependents());
+    downstreamRequest().flush(downstream());
     await settle();
 
     expect(page().textContent).toContain('404 no such repository');

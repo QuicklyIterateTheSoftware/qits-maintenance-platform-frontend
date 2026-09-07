@@ -154,6 +154,31 @@
   }
 }
 
+<h2>Downstream repositories</h2>
+
+<p class="lede">
+  What a release of this repository would reach, traced to the end of the chain rather than one hop:
+  the repositories that pin what it publishes, the ones that pin what THEY publish, and so on. Read
+  from the pins and the bills of materials the service already holds, per request.
+</p>
+
+<app-async
+  [state]="downstreamState()"
+  loadingLabel="Loading what is downstream"
+  errorLabel="Could not load what is downstream"
+  (retry)="loadDownstream()"
+/>
+
+@if (downstreamState().kind === 'ready') {
+  @if (downstream().length === 0) {
+    <app-empty
+      message="Nothing on the platform is downstream of this repository. Neither a pin nor a released artifact names what it publishes — which is the ordinary answer for a service or a frontend, and nothing to act on."
+    />
+  } @else {
+    <app-downstream-table [downstream]="downstream()" [caption]="downstreamCaption()" />
+  }
+}
+
 <h2>Recent bumps</h2>
 
 <app-async

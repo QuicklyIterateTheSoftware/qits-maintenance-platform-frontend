@@ -1,0 +1,60 @@
+/* What the adoption journey adds to the shared page furniture: the heading's separator, the fact
+   line under it, and the depth headers the rows hang off.
+
+   There are no indents here and that is deliberate. The release trains drew a tree because the
+   client had built one; this page draws a list the service ordered, and a distance is said in words
+   in the header of its group rather than in a left margin the eye has to measure. */
+
+.head h1 .at {
+  color: #9ca3af;
+  padding: 0 0.05rem;
+}
+
+.facts {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.15rem 0 1rem;
+  font-size: 0.9rem;
+}
+
+/* Everything at one distance from the release, as the header of the rows under it. Tinted so the
+   eye finds the boundary between one hop and the next without reading the sentence again. */
+.row-depth td {
+  background: #eef2ff;
+  white-space: normal;
+}
+
+.row-depth .depth-name {
+  margin-right: 0.6rem;
+  font-weight: 600;
+  color: #3730a3;
+}
+
+/* A row that has not taken the release yet. Quiet rather than amber: waiting is the ordinary state
+   of a downstream repository an hour after a release, and colouring it as work would put a warning
+   on most of the table on most days. The badge in the State column is the whole verdict. */
+.row-pending td {
+  color: #6b7280;
+}
+
+/* The repository is gone from the catalog, so it will never take this release. Amber rather than
+   red: nothing is broken, there is simply nobody left to wait for on this row. */
+.absent {
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  border-radius: 0.25rem;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* A release this service holds no packages for: said above the table, in the page's own voice
+   rather than as an error, because the closure below it is still true. */
+.note {
+  margin: 0 0 0.75rem;
+  color: #92400e;
+  font-size: 0.88rem;
+}

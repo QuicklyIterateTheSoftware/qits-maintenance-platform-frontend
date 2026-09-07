@@ -34,21 +34,14 @@ describe('status tone', () => {
   });
 
   /**
-   * A train still travelling is the ordinary state of a release an hour old, and a later release
-   * retiring one is housekeeping. Neither is a warning, and colouring them so would put amber on
-   * most of the listing on most days.
+   * The two states of a downstream repository, and the amber PENDING already had from the SBOM
+   * column. A repository that has not taken a release yet is waiting rather than failing, and one
+   * that has is information rather than an outcome — colouring either differently would put a
+   * verdict on the ordinary course of a release travelling downstream.
    */
-  it('reads a travelling train as information and a retired one as a non-event', () => {
-    expect(toneOf('OPEN')).toBe('info');
-    expect(toneOf('COMPLETED')).toBe('success');
-    expect(toneOf('SUPERSEDED')).toBe('neutral');
-  });
-
-  /** The three stages of one consumer, and the amber PENDING already had from the SBOM column. */
-  it('separates a consumer that has not moved from one that adopted and one that landed', () => {
+  it('separates a repository that has taken a release from one that has not', () => {
     expect(toneOf('PENDING')).toBe('warning');
     expect(toneOf('ADOPTED')).toBe('info');
-    expect(toneOf('LANDED')).toBe('success');
   });
 
   it('falls back to neutral for a status this build has never heard of', () => {

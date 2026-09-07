@@ -63,31 +63,18 @@ export type GroupSource = 'CONFIG' | 'DEFAULT';
 export type SbomStatus = 'PENDING' | 'INGESTED' | 'MISSING' | 'FAILED';
 
 /**
- * Where a release train stands.
+ * Whether a downstream repository has taken a release yet.
  *
- * `SUPERSEDED` is not a failure: a second release of the same repository opens a new train and
- * retires this one, because nobody is going to adopt the older version now. `supersededBy` names
- * the train that took over.
- */
-export type TrainStatus = 'OPEN' | 'COMPLETED' | 'SUPERSEDED';
-
-/**
- * How far one consumer of a release has got.
+ * **Two words and no third one.** `ADOPTED` means one of that repository's own releases carries a
+ * version of the subject at least as new as the one asked about; `PENDING` means none does — which
+ * includes the repository that has not been released since, the one whose bill of materials has not
+ * been ingested, and the one nothing can be said about. A `PENDING` row is not a failure and is
+ * never drawn as one: it is the ordinary state of a downstream repository an hour after a release.
  *
- * `ADOPTED` means the new version is written somewhere — a branch, a pin — and `LANDED` means it
- * reached the consumer's own `main`. The two are a day apart on a repository whose gates are slow,
- * which is the whole reason they are separate words.
+ * The service evaluates this per request against the bills of materials it holds, so a row can move
+ * from `PENDING` to `ADOPTED` between two reads of this page and never the other way.
  */
-export type TrainNodeState = 'PENDING' | 'ADOPTED' | 'LANDED';
-
-/**
- * What kind of end of the line a consumer is, which decides whether the journey continues past it.
- *
- * `LINKED` is a repository that pins the package and releases its own version in turn — the only
- * end that starts a train of its own. The two pins are terminal by construction: a deployment
- * configuration naming an image, and a daemon naming one, are both adopted and then done.
- */
-export type TrainEndKind = 'LINKED' | 'CONFIG_IMAGE_PIN' | 'DAEMON_PIN';
+export type AdoptionState = 'ADOPTED' | 'PENDING';
 
 /**
  * One maintenance group of a repository, and the branch it bumps on.
@@ -359,103 +346,87 @@ export function bumpBranch(bump: BumpDto): string {
   return bump.branch || `maintenance/${bump.group}`;
 }
 
-/** One thing a release published, which is what the consumers below it pin. */
-export interface TrainPackageDto {
+/**
+ * One repository downstream of another, and how it was reached.
+ *
+ * `depth` is how many hops away it is: 1 pins something the subject publishes, 2 pins something
+ * *that* repository publishes, and so on to the end of the chain. `via` is the repositories the
+ * trace came through to get here — empty at depth 1, one name per hop after it — which is what
+ * makes a deep row readable without re-deriving the graph on screen.
+ *
+ * `catalogId` is qits-projects' id for the same repository, or null where the inventory cannot
+ * place the name. It is a join for the platform's other addresses and never this app's own: every
+ * page here is addressed by NAME.
+ */
+export interface DownstreamEntryDto {
+  readonly repository: string;
+  readonly catalogId: string | null;
+  readonly archetype: string | null;
+  readonly depth: number;
+  readonly via: readonly string[];
+}
+
+/**
+ * Everything downstream of one repository — `GET /repositories/{name}/downstream`.
+ *
+ * **Evaluated per request, not stored.** The service traces declared pins and the bills of
+ * materials of what has been released, to the end of the chain rather than one hop, and answers
+ * `depth` ascending then name. An unknown repository is an empty `downstream` and not a 404: the
+ * question "who is downstream of this" has an honest answer for a name nothing knows, and it is
+ * "nothing here".
+ */
+export interface DownstreamDto {
+  readonly repository: string;
+  readonly catalogId: string | null;
+  readonly downstream: readonly DownstreamEntryDto[];
+}
+
+/** One thing a release published, which is what the repositories below it pin. */
+export interface AdoptionPackageDto {
   readonly ecosystem: string;
   readonly name: string;
 }
 
 /**
- * One consumer of a release, and how far it has got with it.
+ * One repository downstream of a release, and whether it has taken it.
  *
- * **`consumer` is not always a repository.** A `LINKED` end names one and carries its catalog id
- * and status; a `CONFIG_IMAGE_PIN` end names an *application* whose deployment configuration pins
- * the image, and there is no repository row behind it — which is why `consumerCatalogId` and
- * `consumerStatus` are both null there, and why a link to a repository page is only ever drawn when
- * `consumerStatus` is not.
+ * **Every adopter IS a repository**, unlike the consumers of the release trains this replaced:
+ * the closure is traced over the inventory, so there is no application-named end. `repositoryStatus`
+ * is the catalog's word about it — `ABSENT` for one that left the catalog — and null where the
+ * inventory holds no row at all, which is the one case a link to a repository page is not drawn.
  *
- * **`consumerStatus` is the catalog's word, not this train's.** `ABSENT` means the repository the
- * train was built against is no longer in the catalog: the node will never move, and a journey that
- * quietly waited on it would look stuck for a reason nothing on screen explained.
- *
- * `childTrainId` is the train that this consumer's OWN release opened, and it is what turns a train
- * into a journey. It is null until the consumer has released — a node can be `LANDED` and still
- * carry none, for a consumer that landed the bump and has not been released since.
+ * `adoptedVersion` is that repository's OWN release that first carried a new-enough copy of the
+ * subject, and `adoptedAt` is when that release happened; both are null while the state is
+ * `PENDING`. `via` says which repositories the trace came through, and is what a `PENDING` row is
+ * read with: a repository three hops down is waiting on the ones above it, not on this release.
  */
-export interface TrainNodeDto {
-  readonly id: string;
-  readonly consumer: string;
-  readonly consumerCatalogId: string | null;
-  readonly consumerStatus: RepositoryStatus | null;
+export interface AdopterDto {
+  readonly repository: string;
+  readonly catalogId: string | null;
+  readonly repositoryStatus: RepositoryStatus | null;
   readonly archetype: string | null;
-  readonly endKind: TrainEndKind;
-  readonly state: TrainNodeState;
+  readonly depth: number;
+  readonly via: readonly string[];
+  readonly state: AdoptionState;
   readonly adoptedVersion: string | null;
   readonly adoptedAt: string | null;
-  readonly childTrainId: string | null;
-  readonly landedAt: string | null;
-}
-
-/** A train as the listing shows it: one release, and how much of its reach has landed. */
-export interface TrainSummaryDto {
-  readonly id: string;
-  readonly repository: string;
-  readonly version: string;
-  readonly status: TrainStatus;
-  readonly createdAt: string;
-  readonly completedAt: string | null;
-  readonly nodeCount: number;
-  readonly landedCount: number;
 }
 
 /**
- * One release train: a release of one repository, and every consumer it was meant to reach.
+ * One release, and how far it has travelled — `GET /adoption/by-release?repository=&version=`.
  *
- * The service answers one train at a time and never a journey. Following the `childTrainId`s and
- * stitching the result into a tree is deliberately this application's job — the shape of the
- * journey is a question about a reading, not a fact the service holds, and a server that walked it
- * would have to guess how far.
+ * **The whole journey arrives in one answer.** The service folds the closure and the adoption of
+ * every step of it per request; there is nothing to stitch here and nothing to follow. That is a
+ * change from the release trains this replaced, where the client walked a train per consumer.
+ *
+ * **There is no 404.** A release the log knows nothing about answers with empty `packages` and
+ * whatever the closure says, every row `PENDING` — because the question is asked of the dependency
+ * graph rather than of a record that a release was tracked.
  */
-export interface TrainDto {
-  readonly id: string;
+export interface AdoptionJourneyDto {
   readonly repository: string;
-  /**
-   * qits-projects' id for the releasing repository — the same join every node carries for its
-   * consumer, and there for the same reason: the release-request addresses on that side are keyed
-   * by catalog id, so a station that links its own release needs one. Null where the inventory
-   * cannot place the name, and then no such link is drawn.
-   */
-  readonly repositoryCatalogId: string | null;
+  readonly catalogId: string | null;
   readonly version: string;
-  readonly status: TrainStatus;
-  readonly createdAt: string;
-  readonly completedAt: string | null;
-  /** The train that retired this one — a later release of the same repository. */
-  readonly supersededBy: string | null;
-  readonly packages: readonly TrainPackageDto[];
-  readonly nodes: readonly TrainNodeDto[];
-}
-
-/**
- * What kind of end a node is, in a sentence, or nothing for a kind this build has not been taught.
- *
- * The three ends are not three flavours of the same thing: one of them continues the journey and
- * two of them stop it, and that distinction is invisible from the word alone.
- */
-export function trainEndNote(endKind: string): string {
-  switch (endKind) {
-    case 'LINKED':
-      return 'a repository that pins this package — its own release carries the journey on';
-    case 'CONFIG_IMAGE_PIN':
-      return 'an application whose deployment configuration pins the image; the journey ends here';
-    case 'DAEMON_PIN':
-      return 'a daemon that pins the image; the journey ends here';
-    default:
-      return '';
-  }
-}
-
-/** A train nothing more will happen to. Only an OPEN one is worth polling. */
-export function isTrainSettled(status: TrainStatus): boolean {
-  return status !== 'OPEN';
+  readonly packages: readonly AdoptionPackageDto[];
+  readonly adopters: readonly AdopterDto[];
 }

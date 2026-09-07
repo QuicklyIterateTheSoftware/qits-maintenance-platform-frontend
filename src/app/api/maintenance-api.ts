@@ -4,30 +4,31 @@ import { firstValueFrom } from 'rxjs';
 import { QITS_API_BASE } from './api-base';
 import type {
   AcceptedDto,
+  AdoptionJourneyDto,
   ArtifactDto,
   BumpDto,
   DependencyDto,
   DependentsDto,
+  DownstreamDto,
   InventorySection,
   RepositoryDependentsDto,
   RepositoryDetailDto,
   RepositoryDto,
   ScanScope,
-  TrainDto,
-  TrainSummaryDto,
 } from './dto';
 
 /**
  * Everything this app says to qits-platform-maintenance, through the edge, at `/maintenance/api`.
  *
- * **Eight reads and two writes, and the writes are the point of the application.** A scan refreshes
+ * **Ten reads and two writes, and the writes are the point of the application.** A scan refreshes
  * what the platform pins and what the registries hold; a bump asks CI to write the branch. Both
  * answer 202: the work is accepted, not finished, and every page re-reads for anything else.
  *
- * **Three of the reads are about the other direction.** Pins say what a repository consumes;
+ * **Five of the reads are about the other direction.** Pins say what a repository consumes;
  * `artifacts`, `artifactDependents` and `repositoryDependents` say what consumes it, read off the
- * bills of materials of what the platform has actually released. Nothing in that half is editable,
- * and none of it is polled.
+ * bills of materials of what the platform has actually released, and `downstream` and
+ * `adoptionByRelease` trace that direction to the end of the chain rather than one hop. Nothing in
+ * that half is editable, and none of it is polled.
  *
  * **Every path is relative.** The SPA is served at `/maintenance/` by the service itself, behind
  * the edge that serves `/maintenance/api/…`, so a same-origin absolute path is what lets the
@@ -108,6 +109,43 @@ export class MaintenanceApi {
   }
 
   /**
+   * Everything downstream of a repository, to the end of the chain rather than one hop.
+   *
+   * `dependents` answers who consumes this repository directly; this answers who consumes THEM as
+   * well, and who consumes those, ordered by how far away each is. It is traced per request out of
+   * the pins and the bills of materials the service already holds — there is nothing stored to go
+   * stale, and nothing here to poll.
+   *
+   * A name the inventory does not know is an empty answer and not a 404, so a caller composing this
+   * from a name it was handed never has to tell the two apart.
+   */
+  downstream(name: string): Promise<DownstreamDto> {
+    return firstValueFrom(
+      this.http.get<DownstreamDto>(`${this.repositoryUrl(name)}/downstream`),
+    );
+  }
+
+  /**
+   * How far one release has travelled: who is downstream of it, and which of them have taken it.
+   *
+   * Both halves are query parameters rather than segments, for the reason `artifactDependents`
+   * gives: a version is safe in a path but a repository name need not be, and the pair is one
+   * question — the service answers 400 to half of it.
+   *
+   * **There is no 404 to handle.** The answer is derived from the dependency graph rather than read
+   * out of a record that a release was tracked, so a release this service has never seen answers
+   * with no packages and a wholly pending closure. The one status a caller must still expect is the
+   * ordinary failure of a service that is down.
+   */
+  adoptionByRelease(repository: string, version: string): Promise<AdoptionJourneyDto> {
+    return firstValueFrom(
+      this.http.get<AdoptionJourneyDto>(`${this.base}/maintenance/api/adoption/by-release`, {
+        params: new HttpParams().set('repository', repository).set('version', version),
+      }),
+    );
+  }
+
+  /**
    * Rescan the catalog and refresh the latest versions.
    *
    * `repository` narrows it to one; leaving it out is the whole platform, which is what the two
@@ -158,50 +196,6 @@ export class MaintenanceApi {
   bump(id: string): Promise<BumpDto> {
     return firstValueFrom(
       this.http.get<BumpDto>(`${this.base}/maintenance/api/bumps/${encodeURIComponent(id)}`),
-    );
-  }
-
-  /**
-   * Recent release trains, newest first, for one repository or for all of them.
-   *
-   * The order is the SERVICE's, for the reason `bumps` gives. `limit` is clamped to 1..200 there,
-   * so a caller asking for more gets 200 and not an error.
-   */
-  trains(repository?: string, limit = 50): Promise<readonly TrainSummaryDto[]> {
-    let params = new HttpParams().set('limit', limit);
-    if (repository) {
-      params = params.set('repository', repository);
-    }
-    return firstValueFrom(
-      this.http.get<TrainSummaryDto[]>(`${this.base}/maintenance/api/trains`, { params }),
-    );
-  }
-
-  /**
-   * One train with every consumer of the release it is about.
-   *
-   * This is the call the journey view makes over and over: the service answers one train, the tree
-   * is stitched here by following each node's `childTrainId` back into this method.
-   */
-  train(id: string): Promise<TrainDto> {
-    return firstValueFrom(
-      this.http.get<TrainDto>(`${this.base}/maintenance/api/trains/${encodeURIComponent(id)}`),
-    );
-  }
-
-  /**
-   * The same document, addressed by the release it is about rather than by the train's id.
-   *
-   * It exists because a linker — a release request, a chat message — has a repository and a version
-   * and never the train's id, which is minted here. Both halves are query parameters rather than
-   * segments: a version is safe in a path but a repository name need not be, and the pair is one
-   * question. A 404 is the ordinary answer for a release from before trains were recorded.
-   */
-  trainByRelease(repository: string, version: string): Promise<TrainDto> {
-    return firstValueFrom(
-      this.http.get<TrainDto>(`${this.base}/maintenance/api/trains/by-release`, {
-        params: new HttpParams().set('repository', repository).set('version', version),
-      }),
     );
   }
 

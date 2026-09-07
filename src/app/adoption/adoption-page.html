@@ -1,0 +1,130 @@
+<p class="crumbs">
+  <a [routerLink]="[...scoped.commands(), 'repositories', repository()]">{{
+    repository() || none
+  }}</a
+  ><span class="sep">/</span>{{ version() || none }}
+</p>
+
+<header class="head">
+  <h1>
+    @if (repository()) {
+      {{ repository() }}<span class="at">&#64;</span>{{ version() }}
+    } @else {
+      Adoption
+    }
+  </h1>
+  <div class="actions">
+    <!-- A pending row moves when a downstream repository releases, which is minutes at best, so
+         this page does not poll — it offers the reader the same question again instead. -->
+    <qits-button variant="secondary" size="sm" [busy]="rereading()" (pressed)="load()"
+      >Ask again</qits-button
+    >
+  </div>
+</header>
+@if (scoped.name(); as project) {
+  <p class="project-scope">{{ project }}</p>
+}
+
+<p class="lede">
+  Everything downstream of this release, and which of it is already carrying the version. The
+  service traces the whole chain per request — a repository that pins what a repository that pins
+  this publishes is on the list too — so what is below is the answer as of now and not a record kept
+  when the release happened.
+</p>
+
+@if (journey()) {
+  <p class="facts">
+    @if (packages()) {
+      <span class="subtle mono">{{ packages() }}</span>
+    }
+    <span class="subtle">{{ adoptedCount() }}/{{ adopters().length }} carrying it</span>
+  </p>
+}
+
+<!-- Nothing published means no downstream row can ever match, which would otherwise read as a
+     platform that had stopped rather than as a release this service holds no bill of materials for. -->
+@if (nothingPublished()) {
+  <p class="note" role="status">
+    This service knows of nothing published by {{ repository() }}&#64;{{ version() }} — either the
+    release predates the inventory, or its bill of materials was never ingested. The repositories
+    below are still what is downstream of it; none of them can be shown as carrying it.
+  </p>
+}
+
+<app-async
+  [state]="state()"
+  loadingLabel="Loading the adoption journey"
+  errorLabel="Could not load the adoption journey"
+  (retry)="load()"
+/>
+
+@if (state().kind === 'ready') {
+  @if (reachedNothing()) {
+    <app-empty
+      message="Nothing on the platform is downstream of this release. No repository pins what it published and no released artifact contains it — which is the ordinary answer for a service or a frontend, and nothing to act on."
+    />
+  } @else {
+    <div class="scroll">
+      <table>
+        <caption>
+          {{
+            caption()
+          }}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Repository</th>
+            <th scope="col">Archetype</th>
+            <th scope="col">State</th>
+            <th scope="col">Version carrying it, or what it waits on</th>
+            <th scope="col">Released</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.key) {
+            @if (row.kind === 'depth') {
+              <!-- How far away the rows under it are. A colspan and not a row of the same columns:
+                   a distance and a repository answer different questions, and sharing the grid
+                   would put a count under "Archetype". -->
+              <tr class="row-depth">
+                <td colspan="5">
+                  <span class="depth-name">{{ depthLabel(row.depth) }}</span>
+                  <span class="subtle">{{ row.adopted }}/{{ row.total }} carrying it</span>
+                </td>
+              </tr>
+            } @else {
+              <tr class="row-adopter" [class.row-pending]="row.adopter.state === 'PENDING'">
+                <td>
+                  <!-- Linked only where the inventory holds a row for the name: a repository the
+                       trace reached through a submodule URL nobody has scanned has no page here,
+                       and a link to nowhere is worse than a name without one. -->
+                  @if (row.linkable) {
+                    <a
+                      [routerLink]="[...scoped.commands(), 'repositories', row.adopter.repository]"
+                      >{{ row.adopter.repository }}</a
+                    >
+                  } @else {
+                    <span [attr.title]="'not in this inventory'">{{ row.adopter.repository }}</span>
+                  }
+                  <!-- The repository left the catalog: it will never take this release, and a row
+                       that waited on it silently would look stuck for no visible reason. -->
+                  @if (row.adopter.repositoryStatus === 'ABSENT') {
+                    <span class="absent" title="no longer in the catalog">absent</span>
+                  }
+                </td>
+                <td class="subtle">{{ row.adopter.archetype || none }}</td>
+                <td><app-status-badge [status]="row.adopter.state" /></td>
+                <td class="value" [class.mono]="row.adopter.state === 'ADOPTED'">
+                  {{ row.note }}
+                </td>
+                <td class="subtle" [attr.title]="instant(row.adopter.adoptedAt)">
+                  {{ ago(row.adopter.adoptedAt) }}
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+}

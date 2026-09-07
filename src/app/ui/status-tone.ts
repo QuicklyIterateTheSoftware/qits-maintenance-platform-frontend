@@ -4,13 +4,13 @@ import type { QitsBadgeTone } from '@qits/ui-components';
  * What colour a status word is, in one place, for every badge on every page.
  *
  * `QitsBadge` takes a *semantic* tone and never a colour, so this file is a translation between two
- * vocabularies rather than styling. Seven enums share it — a repository's scan status, a branch's
- * state, a bump's outcome, an artifact's bill of materials, a dependent's currency, a release
- * train's status and one train node's state — because they overlap and never collide: `FAILED`
- * means the same thing on a branch, on a bump and on an ingest, and no word appears in two of them
- * with two meanings.
+ * vocabularies rather than styling. Six enums share it — a repository's scan status, a branch's
+ * state, a bump's outcome, an artifact's bill of materials, a dependent's currency and a downstream
+ * repository's adoption of a release — because they overlap and never collide: `FAILED` means the
+ * same thing on a branch, on a bump and on an ingest, and no word appears in two of them with two
+ * meanings.
  *
- * **PENDING is the same amber for a train node as for an SBOM**, and that is the shared word
+ * **PENDING is the same amber for an adoption as for an SBOM**, and that is the shared word
  * working rather than a collision: both mean "nothing has happened here yet, and something is
  * expected to".
  *
@@ -49,15 +49,11 @@ const TONES: Readonly<Record<string, QitsBadgeTone>> = {
   CURRENT: 'success',
   BEHIND: 'warning',
   UNKNOWN: 'neutral',
-  // A release train. OPEN is info rather than warning: a train that is still travelling is the
-  // ordinary state of a release an hour old, and amber would call every one of them a problem.
-  // SUPERSEDED is neutral for the same reason — a later release retiring this one is housekeeping.
-  OPEN: 'info',
-  COMPLETED: 'success',
-  SUPERSEDED: 'neutral',
-  // One consumer's progress through a train. PENDING is the amber above, deliberately shared.
+  // Whether a downstream repository has taken a release. PENDING is the amber above, deliberately
+  // shared: a repository that has not released with the new version yet is waiting, exactly as an
+  // artifact whose bill of materials has not arrived is. ADOPTED is information rather than
+  // success — the release travelling downstream is the ordinary course of things, not an outcome.
   ADOPTED: 'info',
-  LANDED: 'success',
 };
 
 /**

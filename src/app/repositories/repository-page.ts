@@ -18,6 +18,8 @@ import {
   isBumpTerminal,
   releaseSentinel,
   type BumpDto,
+  type DownstreamDto,
+  type DownstreamEntryDto,
   type GroupDto,
   type PinDto,
   type RepositoryDependentsDto,
@@ -32,6 +34,7 @@ import { QITS_SCHEDULER } from '../ui/scheduler';
 import { StatusBadge } from '../ui/status-badge';
 import { tickingNow } from '../ui/ticker';
 import { DependentsTable } from './dependents-table';
+import { DownstreamTable } from './downstream-table';
 import { PinsTable } from './pins-table';
 
 /** How often this page re-reads while a bump for this repository is still going. */
@@ -63,6 +66,12 @@ interface GroupPanel {
  * what has actually been released; a release is a fact that happened, and it does not move while it
  * is being looked at.
  *
+ * **Downstream is the dependents followed to the end.** Dependents says who consumes this
+ * repository; downstream says who consumes them as well, and how far the chain goes — which is what
+ * a release of this repository is going to reach. It is traced by the service per request and, like
+ * the dependents, read once and retried by hand rather than polled: a bump moves pins, and the
+ * closure it might move is a question for the next visit rather than for the next two seconds.
+ *
  * **The button is disabled while that group's bump is running, and still handles a 409.** The
  * disable is a courtesy — the reader can see the bump on screen — and the 409 is the truth: the
  * service holds the rule, and a bump started by the schedule a second before the click is a state
@@ -74,6 +83,7 @@ interface GroupPanel {
   imports: [
     Async,
     DependentsTable,
+    DownstreamTable,
     Empty,
     PinsTable,
     QitsButton,
@@ -104,6 +114,7 @@ export class RepositoryPage {
   protected readonly detailState = signal<Loadable<RepositoryDetailDto>>(LOADING);
   protected readonly bumpsState = signal<Loadable<readonly BumpDto[]>>(LOADING);
   protected readonly dependentsState = signal<Loadable<RepositoryDependentsDto>>(LOADING);
+  protected readonly downstreamState = signal<Loadable<DownstreamDto>>(LOADING);
 
   /** The group whose button is waiting for its 202, or nothing. */
   protected readonly bumping = signal<string | null>(null);
@@ -206,6 +217,27 @@ export class RepositoryPage {
       : [];
   });
 
+  /**
+   * Everything the service traced downstream of this repository, in its own order — nearest first.
+   *
+   * Not re-sorted and not filtered here: the wrapper and this repository itself are excluded by the
+   * service, and a client that dropped a row after the fact would still have paid for it.
+   */
+  protected readonly downstream = computed<readonly DownstreamEntryDto[]>(() => {
+    const state = this.downstreamState();
+    return state.kind === 'ready' ? state.value.downstream : [];
+  });
+
+  /** How far the chain goes — the furthest distance any row on it is at. */
+  protected readonly downstreamCaption = computed(() => {
+    const rows = this.downstream();
+    const deepest = rows.reduce((far, row) => Math.max(far, row.depth), 0);
+    return (
+      `${plural(rows.length, 'repository', 'repositories')} downstream, ` +
+      `${plural(deepest, 'hop')} at the furthest.`
+    );
+  });
+
   protected readonly bumps = computed(() => {
     const state = this.bumpsState();
     return state.kind === 'ready' ? state.value : [];
@@ -266,9 +298,14 @@ export class RepositoryPage {
     return formatRelative(iso, this.now());
   }
 
-  /** The page's three reads, issued together and retried separately. */
+  /** The page's four reads, issued together and retried separately. */
   protected async load(): Promise<void> {
-    await Promise.all([this.loadDetail(), this.loadBumps(), this.loadDependents()]);
+    await Promise.all([
+      this.loadDetail(),
+      this.loadBumps(),
+      this.loadDependents(),
+      this.loadDownstream(),
+    ]);
   }
 
   protected async loadDetail(): Promise<void> {
@@ -311,6 +348,26 @@ export class RepositoryPage {
       this.dependentsState.set(ready(await this.api.repositoryDependents(name)));
     } catch (error) {
       this.dependentsState.set(failed(error));
+    }
+  }
+
+  /**
+   * Everything downstream of this repository, however far the chain goes.
+   *
+   * Never polled, for the reason `loadDependents` gives and one of its own: this is a traced query
+   * over the whole graph rather than a row fetch, and re-issuing it every two seconds while a bump
+   * runs would be the most expensive read on the page repeated for a picture that does not move
+   * while a branch is being written.
+   */
+  protected async loadDownstream(): Promise<void> {
+    const name = this.name();
+    if (this.downstreamState().kind !== 'ready') {
+      this.downstreamState.set(LOADING);
+    }
+    try {
+      this.downstreamState.set(ready(await this.api.downstream(name)));
+    } catch (error) {
+      this.downstreamState.set(failed(error));
     }
   }
 
@@ -377,6 +434,7 @@ export class RepositoryPage {
     this.detailState.set(LOADING);
     this.bumpsState.set(LOADING);
     this.dependentsState.set(LOADING);
+    this.downstreamState.set(LOADING);
     this.bumping.set(null);
     this.bumpNote.set('');
     this.pollProblem.set('');
