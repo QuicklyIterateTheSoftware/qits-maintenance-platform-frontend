@@ -1,6 +1,6 @@
 {
   "name": "qits-platform-spa-maintenance",
-  "version": "2026.906.173820",
+  "version": "2026.907.121526",
   "private": true,
   "description": "The maintenance frontend: an Angular application that consumes @qits/ui-components from qits' own npm registry. It ships no image — qits-platform-maintenance serves it at the root of its own host.",
   "license": "MIT",
