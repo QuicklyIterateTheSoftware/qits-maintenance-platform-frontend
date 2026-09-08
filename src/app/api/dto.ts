@@ -350,9 +350,15 @@ export function bumpBranch(bump: BumpDto): string {
  * One repository downstream of another, and how it was reached.
  *
  * `depth` is how many hops away it is: 1 pins something the subject publishes, 2 pins something
- * *that* repository publishes, and so on to the end of the chain. `via` is the repositories the
- * trace came through to get here — empty at depth 1, one name per hop after it — which is what
- * makes a deep row readable without re-deriving the graph on screen.
+ * *that* repository publishes, and so on to the end of the chain.
+ *
+ * **`via` is the PARENTS, not the path.** It names every repository at `depth - 1` that leads here,
+ * name-ascending — several of them, when two upstreams both do — because `DownstreamResolver` walks
+ * one level at a time and collects each consumer's upstreams as it goes. At depth 1 that is the
+ * subject itself. It is emphatically not a chain from the root to this entry: two names in it are
+ * siblings one hop up, and reading them as a route would invent an order between them that nothing
+ * here means. Those are the incoming edges of a DAG, which is what makes a deep entry readable
+ * without re-deriving the graph on screen.
  *
  * `catalogId` is qits-projects' id for the same repository, or null where the inventory cannot
  * place the name. It is a join for the platform's other addresses and never this app's own: every
@@ -397,8 +403,15 @@ export interface AdoptionPackageDto {
  *
  * `adoptedVersion` is that repository's OWN release that first carried a new-enough copy of the
  * subject, and `adoptedAt` is when that release happened; both are null while the state is
- * `PENDING`. `via` says which repositories the trace came through, and is what a `PENDING` row is
- * read with: a repository three hops down is waiting on the ones above it, not on this release.
+ * `PENDING`.
+ *
+ * **`via` names the PARENTS at `depth - 1` — all of them, name-ascending — and never a path.** Two
+ * upstreams can both lead to one repository (a service that pins a library directly AND submodules
+ * a frontend carrying it), and `DownstreamResolver` collects every one of them; at depth 1 the sole
+ * parent is the subject repository itself. That is what a `PENDING` adopter is read with — a
+ * repository three hops down is waiting on the ones above it, not on this release — and it is why
+ * the journey is drawn as a graph with one card per repository and an edge in from each parent,
+ * rather than as a tree that would have to copy the repository under each of them.
  */
 export interface AdopterDto {
   readonly repository: string;

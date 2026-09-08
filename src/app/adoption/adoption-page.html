@@ -14,7 +14,7 @@
     }
   </h1>
   <div class="actions">
-    <!-- A pending row moves when a downstream repository releases, which is minutes at best, so
+    <!-- A pending card moves when a downstream repository releases, which is minutes at best, so
          this page does not poll — it offers the reader the same question again instead. -->
     <qits-button variant="secondary" size="sm" [busy]="rereading()" (pressed)="load()"
       >Ask again</qits-button
@@ -29,7 +29,8 @@
   Everything downstream of this release, and which of it is already carrying the version. The
   service traces the whole chain per request — a repository that pins what a repository that pins
   this publishes is on the list too — so what is below is the answer as of now and not a record kept
-  when the release happened.
+  when the release happened. Each column is one hop further out, and an arrow is one repository
+  reaching another.
 </p>
 
 @if (journey()) {
@@ -41,7 +42,7 @@
   </p>
 }
 
-<!-- Nothing published means no downstream row can ever match, which would otherwise read as a
+<!-- Nothing published means no downstream card can ever match, which would otherwise read as a
      platform that had stopped rather than as a release this service holds no bill of materials for. -->
 @if (nothingPublished()) {
   <p class="note" role="status">
@@ -64,67 +65,119 @@
       message="Nothing on the platform is downstream of this release. No repository pins what it published and no released artifact contains it — which is the ordinary answer for a service or a frontend, and nothing to act on."
     />
   } @else {
-    <div class="scroll">
-      <table>
-        <caption>
-          {{
-            caption()
-          }}
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Repository</th>
-            <th scope="col">Archetype</th>
-            <th scope="col">State</th>
-            <th scope="col">Version carrying it, or what it waits on</th>
-            <th scope="col">Released</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (row of rows(); track row.key) {
-            @if (row.kind === 'depth') {
-              <!-- How far away the rows under it are. A colspan and not a row of the same columns:
-                   a distance and a repository answer different questions, and sharing the grid
-                   would put a count under "Archetype". -->
-              <tr class="row-depth">
-                <td colspan="5">
-                  <span class="depth-name">{{ depthLabel(row.depth) }}</span>
-                  <span class="subtle">{{ row.adopted }}/{{ row.total }} carrying it</span>
-                </td>
-              </tr>
-            } @else {
-              <tr class="row-adopter" [class.row-pending]="row.adopter.state === 'PENDING'">
-                <td>
-                  <!-- Linked only where the inventory holds a row for the name: a repository the
-                       trace reached through a submodule URL nobody has scanned has no page here,
-                       and a link to nowhere is worse than a name without one. -->
-                  @if (row.linkable) {
-                    <a
-                      [routerLink]="[...scoped.commands(), 'repositories', row.adopter.repository]"
-                      >{{ row.adopter.repository }}</a
-                    >
-                  } @else {
-                    <span [attr.title]="'not in this inventory'">{{ row.adopter.repository }}</span>
-                  }
-                  <!-- The repository left the catalog: it will never take this release, and a row
-                       that waited on it silently would look stuck for no visible reason. -->
-                  @if (row.adopter.repositoryStatus === 'ABSENT') {
-                    <span class="absent" title="no longer in the catalog">absent</span>
-                  }
-                </td>
-                <td class="subtle">{{ row.adopter.archetype || none }}</td>
-                <td><app-status-badge [status]="row.adopter.state" /></td>
-                <td class="value" [class.mono]="row.adopter.state === 'ADOPTED'">
-                  {{ row.note }}
-                </td>
-                <td class="subtle" [attr.title]="instant(row.adopter.adoptedAt)">
-                  {{ ago(row.adopter.adoptedAt) }}
-                </td>
-              </tr>
+    <figure class="journey">
+      <!-- The sentence the table's caption carried, kept above the drawing it now describes. -->
+      <figcaption>
+        {{ caption() }}
+        <!-- Two kinds of arrow, said in words as well as in colour: the tint is a second reading of
+             what the badge on each card already states, and never the only one. -->
+        <span class="key">
+          <span class="key-mark key-adopted" aria-hidden="true"></span>into a repository carrying it
+          <span class="key-mark key-pending" aria-hidden="true"></span>into one still waiting
+        </span>
+      </figcaption>
+
+      <!-- A deep chain is wider than any screen, and a column squeezed to fit would be a card with
+           no name left on it. The whole drawing scrolls sideways instead, as every table here does. -->
+      <div class="scroll">
+        <div
+          class="chart"
+          [style.width.px]="chart().width"
+          [style.height.px]="chart().height"
+          [style.--card-w]="cardWidth"
+          [style.--card-h]="cardHeight"
+        >
+          <!-- Behind the cards, and out of the accessibility tree: an edge is a curve and says
+               nothing without sight, so each card writes out what reaches it instead. -->
+          <svg
+            class="edges"
+            [attr.width]="chart().width"
+            [attr.height]="chart().height"
+            [attr.viewBox]="'0 0 ' + chart().width + ' ' + chart().height"
+            aria-hidden="true"
+            focusable="false"
+          >
+            @for (edge of chart().edges; track edge.key) {
+              <path
+                class="edge"
+                [class.edge-adopted]="edge.adopted"
+                [attr.d]="edge.path"
+                [attr.data-from]="edge.from"
+                [attr.data-to]="edge.to"
+              />
             }
+          </svg>
+
+          @for (column of chart().columns; track column.key) {
+            <div class="column-head" [attr.data-depth]="column.depth" [style.left.px]="column.x">
+              <span class="depth-name">{{ column.label }}</span>
+              @if (column.summary) {
+                <span class="subtle">{{ column.summary }}</span>
+              }
+            </div>
           }
-        </tbody>
-      </table>
-    </div>
+
+          @for (node of chart().nodes; track node.key) {
+            <div
+              class="node"
+              [class.node-root]="node.root"
+              [class.node-pending]="node.state === 'PENDING'"
+              [attr.data-repository]="node.repository"
+              [attr.data-column]="node.column"
+              [attr.data-row]="node.row"
+              [style.left.px]="node.x"
+              [style.top.px]="node.y"
+            >
+              <p class="node-name">
+                <!-- Linked only where the inventory holds a row for the name: a repository the
+                     trace reached through a submodule URL nobody has scanned has no page here,
+                     and a link to nowhere is worse than a name without one. -->
+                @if (node.linkable) {
+                  <a
+                    [routerLink]="[...scoped.commands(), 'repositories', node.repository]"
+                    [attr.title]="node.repository"
+                    >{{ node.repository }}</a
+                  >
+                } @else {
+                  <span [attr.title]="'not in this inventory'">{{ node.repository }}</span>
+                }
+                <!-- The repository left the catalog: it will never take this release, and a card
+                     that waited on it silently would look stuck for no visible reason. -->
+                @if (node.absent) {
+                  <span class="absent" title="no longer in the catalog">absent</span>
+                }
+              </p>
+
+              @if (node.root) {
+                <p class="node-line mono">{{ node.version }}</p>
+                <p class="node-line subtle">the release this page is about</p>
+              } @else {
+                <p class="node-line subtle">{{ node.archetype }}</p>
+                <p class="node-line">
+                  @if (node.state; as state) {
+                    <app-status-badge [status]="state" />
+                  }
+                  @if (node.adopted) {
+                    <span class="mono" [attr.title]="node.version">{{ node.version }}</span>
+                  }
+                </p>
+                <p class="node-line subtle">
+                  @if (node.adopted) {
+                    <span [attr.title]="instant(node.adoptedAt)">{{ ago(node.adoptedAt) }}</span>
+                  } @else {
+                    {{ node.note }}
+                  }
+                </p>
+              }
+
+              <!-- What the arrows into this card say, for a reader who cannot see them. -->
+              @if (node.reachedFrom) {
+                <span class="reached">Reached from {{ node.reachedFrom }}.</span>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </figure>
   }
 }

@@ -12,7 +12,7 @@ import { ActivatedRoute, RouterLink, convertToParamMap } from '@angular/router';
 import { QitsButton } from '@qits/ui-components';
 import { MaintenanceApi } from '../api/maintenance-api';
 import { injectScopedProject } from '../nav/scoped-project';
-import type { AdopterDto, AdoptionJourneyDto } from '../api/dto';
+import type { AdopterDto, AdoptionJourneyDto, AdoptionState } from '../api/dto';
 import { Async } from '../ui/async';
 import { Empty } from '../ui/empty';
 import { NONE, formatInstant, formatRelative, plural } from '../ui/format';
@@ -20,31 +20,123 @@ import { LOADING, failed, ready, type Loadable } from '../ui/loadable';
 import { StatusBadge } from '../ui/status-badge';
 import { tickingNow } from '../ui/ticker';
 
-/** The header of one group of rows: everything the same number of hops downstream. */
-interface DepthRow {
-  readonly kind: 'depth';
+/**
+ * The geometry of the flowchart, in pixels, decided here and nowhere else.
+ *
+ * The layout is arithmetic rather than measurement, and that is a deliberate constraint: the only
+ * other way to draw an edge between two cards is to render them, measure them with
+ * `getBoundingClientRect`, and then draw — which is a second layout pass, a resize listener, and a
+ * number that reads as zero under jsdom, where every spec in this repository runs. Fixed cards mean
+ * every coordinate on this page is known before the first paint, an edge's `d` is a pure function of
+ * two integers, and a spec can assert where a card landed without a browser.
+ *
+ * The cost is a card that cannot grow to fit its content, which is why names ellipsis with their
+ * full text in a `title`. That is the right trade for this page: a repository name is long but a
+ * reader recognises it from its head, and a column of cards that were all different heights would
+ * make the edges between them harder to follow, not easier.
+ */
+const CARD_WIDTH = 240;
+const CARD_HEIGHT = 116;
+
+/** The space between two columns — the width every edge has to make its turn in. */
+const COLUMN_GAP = 84;
+
+const ROW_GAP = 16;
+
+/** The band above the cards that the per-column header sits in. */
+const HEADER_HEIGHT = 46;
+
+/** One column of the flowchart: everything at one distance from the release. */
+interface ChartColumn {
   readonly key: string;
   readonly depth: number;
-  /** How many repositories are at this distance, and how many of them have taken the release. */
-  readonly total: number;
-  readonly adopted: number;
+  readonly x: number;
+  /** How far away this column is, in words. */
+  readonly label: string;
+  /** The old depth header's count, kept: how much of this column is carrying the release. */
+  readonly summary: string;
 }
 
-/** One repository downstream of the release, at the distance of the header above it. */
-interface AdopterRow {
-  readonly kind: 'adopter';
+/** One card: the release itself, or one repository downstream of it. */
+interface ChartNode {
   readonly key: string;
-  readonly adopter: AdopterDto;
+  readonly repository: string;
+  readonly column: number;
+  readonly row: number;
+  readonly x: number;
+  readonly y: number;
+  /** The subject of the page rather than an adopter of it — drawn once, in column zero. */
+  readonly root: boolean;
   /** Whether there is a repository page to link to — see `AdopterDto.repositoryStatus`. */
   readonly linkable: boolean;
-  /** What the row says it did, or what it is still waiting behind. */
+  readonly absent: boolean;
+  readonly archetype: string;
+  /** The adoption verdict, or null on the root card, which is the release and not an adopter. */
+  readonly state: AdoptionState | null;
+  readonly adopted: boolean;
+  /** The release this card is about: the subject on the root, the adopting one on an adopter. */
+  readonly version: string;
+  /** What the card says about itself beyond its verdict — a wait, or nothing. */
   readonly note: string;
+  readonly adoptedAt: string | null;
+  /**
+   * The cards that have an edge into this one, joined.
+   *
+   * Drawn for a screen reader only. The edges say this to the eye, and saying it twice on screen is
+   * the sentence this redesign removed; but an edge is a `<path>` and reads as nothing at all
+   * without sight, so the same fact is written out where only a reader who needs it will meet it.
+   */
+  readonly reachedFrom: string;
 }
 
-type JourneyRow = DepthRow | AdopterRow;
+/** One edge, already resolved to the two cards it joins and the curve between them. */
+interface ChartEdge {
+  readonly key: string;
+  /** The repository at the tail and at the head — also on the `<path>`, so the SVG is debuggable. */
+  readonly from: string;
+  readonly to: string;
+  readonly path: string;
+  /** Whether the card this edge arrives at is carrying the release. */
+  readonly adopted: boolean;
+}
+
+/** The whole drawing, and the box it needs. */
+interface Chart {
+  readonly columns: readonly ChartColumn[];
+  readonly nodes: readonly ChartNode[];
+  readonly edges: readonly ChartEdge[];
+  readonly width: number;
+  readonly height: number;
+}
+
+const EMPTY_CHART: Chart = { columns: [], nodes: [], edges: [], width: 0, height: 0 };
+
+/** Where a column's left edge sits. */
+function columnX(column: number): number {
+  return column * (CARD_WIDTH + COLUMN_GAP);
+}
+
+/** Where a row's top edge sits, under the band the column headers occupy. */
+function rowY(row: number): number {
+  return HEADER_HEIGHT + row * (CARD_HEIGHT + ROW_GAP);
+}
 
 /**
- * One release, and how far it has travelled.
+ * A cubic from one card's right edge to another card's left edge.
+ *
+ * The control points sit half the horizontal distance out from each end, so the curve leaves and
+ * arrives horizontally and the reader's eye is never asked which end of a diagonal it is looking at.
+ * The floor under that half matters for the edge that has to climb several rows inside one column
+ * gap: without it the two control points collapse onto their anchors and the curve becomes a
+ * straight line pointing off in a direction the layout does not mean.
+ */
+function edgePath(x1: number, y1: number, x2: number, y2: number): string {
+  const reach = Math.max(28, Math.round((x2 - x1) / 2));
+  return `M ${x1} ${y1} C ${x1 + reach} ${y1}, ${x2 - reach} ${y2}, ${x2} ${y2}`;
+}
+
+/**
+ * One release, and how far it has travelled — drawn left to right as the graph it actually is.
  *
  * <p><b>The journey is served, not stitched.</b> qits-platform-maintenance traces the closure of
  * everything downstream of this release and evaluates the adoption of every step of it per request,
@@ -58,17 +150,41 @@ type JourneyRow = DepthRow | AdopterRow;
  * message — and needs nothing looked up first. It is also where `trains/by-release/…` now redirects,
  * so the links published while the trains existed still open the journey they meant.
  *
- * <p><b>Grouped by distance, in the service's own order.</b> A depth header carries the rows at that
- * many hops, and the rows inside it arrive in the order the service sent them; nothing is re-sorted
- * here, for the reason every listing in this app gives — a client that ordered rows would disagree
- * with its own caption the moment two of them tied.
+ * <p><b>A DAG, and not a tree.</b> This page used to be a table grouped by hop depth, and a table
+ * cannot say the one thing the answer is actually shaped like: two upstreams can both lead to the
+ * same repository — a service that pins a library directly AND submodules a frontend carrying it —
+ * and `AdoptionEvaluator` decides such a repository ONCE, from whichever path got there first. So
+ * the drawing merges too: one card per repository, with an edge in from every parent. Drawing a
+ * tree instead would have to copy that repository under each parent, and the copies would then
+ * disagree with each other about nothing — same verdict, same version, same timestamp — while
+ * suggesting the release arrives there twice.
  *
- * <p><b>Two states, and PENDING is not a failure.</b> An adopted row says which of that
- * repository's own releases first carried a new-enough copy, and when; a pending one says which
- * repositories it is reached through, because a repository three hops down is waiting on the ones
- * above it rather than on this release.
+ * <p><b>Left to right, one column per hop.</b> Column zero is the release; column n holds the
+ * repositories n hops from it. Distance was a sentence in a group header before, which meant the
+ * reader had to hold "two hops through what?" in their head while reading rows that never said. A
+ * column position says the distance without a word, and an edge says the "through what".
  *
- * <p><b>Nothing polls.</b> A pending row moves when a downstream repository releases, which is
+ * <p><b>The rows in a column are ordered here, and this is the one place in this application that
+ * re-orders what the service sent.</b> Every listing here draws the service's order because a
+ * client that sorted rows would disagree with its own caption; a flowchart has no such freedom —
+ * name order would cross edges over each other for no reason a reader could see. So a card sits at
+ * the mean row of its parents, ties broken by name, which pulls each card level with what feeds it
+ * and leaves the ordering a pure function of the answer rather than of the order it arrived in.
+ * Nothing beyond "depth ascending" is assumed of the service, and a depth-1 card's only parent is
+ * the release, so that column falls back to name order exactly as before.
+ *
+ * <p><b>The via-chain sentence is gone.</b> A pending row used to read "waiting behind a → b", which
+ * misread `via` as the path taken to get here; `via` is the set of ALL parents one hop nearer the
+ * release, so the arrow was inventing an order between two repositories that are siblings. The
+ * edges now carry that fact in the only form it is true in — several arrows into one card — and a
+ * deep pending card says nothing more than that it is waiting.
+ *
+ * <p><b>Two states, and PENDING is not a failure.</b> An adopted card names which of that
+ * repository's own releases first carried a new-enough copy, and when. A pending one is quiet: it
+ * is the ordinary state of a downstream repository an hour after a release, and a page that drew
+ * most of the estate as work would be wrong most of the time.
+ *
+ * <p><b>Nothing polls.</b> A pending card moves when a downstream repository releases, which is
  * minutes at best, and a re-read is one traced query over the whole graph rather than a cheap row
  * fetch. The header carries a button that asks again, which is the honest offer: this is a question
  * with an answer as of now, and the reader decides when to ask it a second time.
@@ -88,6 +204,11 @@ export class AdoptionPage {
   private readonly route = inject(ActivatedRoute);
 
   protected readonly none = NONE;
+
+  /** The card box, handed to the stylesheet so the arithmetic above has exactly one source. */
+  protected readonly cardWidth = `${CARD_WIDTH}px`;
+  protected readonly cardHeight = `${CARD_HEIGHT}px`;
+
   /** The clock the relative times are drawn against — a minute's resolution needs no more. */
   private readonly now = tickingNow(30000);
 
@@ -120,8 +241,8 @@ export class AdoptionPage {
    * The release is one this service holds no bill of materials for.
    *
    * Not an error and not a 404: the closure is a fact about the dependency graph and is answered
-   * for any pair. But with nothing known to have been published, no downstream row can ever match,
-   * and a page of PENDING rows with no explanation would read as a platform that had stopped.
+   * for any pair. But with nothing known to have been published, no downstream card can ever match,
+   * and a chart of PENDING cards with no explanation would read as a platform that had stopped.
    */
   protected readonly nothingPublished = computed(
     () => !!this.journey() && this.packages().length === 0,
@@ -137,45 +258,171 @@ export class AdoptionPage {
       `${this.adoptedCount()} carrying it.`,
   );
 
-  /** The release reached nobody — read off the adopters and not off `rows`, which holds headers. */
+  /** The release reached nobody — read off the adopters, not off the chart, which holds the root. */
   protected readonly reachedNothing = computed(() => this.adopters().length === 0);
 
   /**
-   * The table's rows: one header per distance, and the repositories at it underneath.
+   * The flowchart: cards placed on a grid of hops, and the curves between them.
    *
-   * Grouped by first appearance rather than by sorting, so the service's order survives whatever it
-   * decides that order is — today `depth` ascending then name.
+   * <p>Three passes, each with one job. The first merges the answer into one card per repository
+   * and gives each of them a column and a row; the second resolves every parent name to a card that
+   * was actually drawn and turns each surviving pair into a curve; the third writes the cards out
+   * with the list of what arrives at them, which only the second pass knows.
+   *
+   * <p><b>Every lookup is by name, and a name that resolves to nothing is dropped.</b> The service
+   * guarantees `via` names repositories it also lists, but a truncated closure — `DownstreamResolver`
+   * bounds both depth and breadth and says so in a WARN rather than by failing — can hand this page
+   * a parent it never sent. An edge to a card that is not there would be a curve into empty space,
+   * so it is not drawn; the card at its head still is, because a repository that is downstream is
+   * downstream whether or not this answer can say through what.
    */
-  protected readonly rows = computed<readonly JourneyRow[]>(() => {
-    const groups = new Map<number, AdopterDto[]>();
-    for (const adopter of this.adopters()) {
-      const at = groups.get(adopter.depth);
+  protected readonly chart = computed<Chart>(() => {
+    const adopters = this.adopters();
+    if (adopters.length === 0) {
+      return EMPTY_CHART;
+    }
+    const rootName = this.journey()?.repository || this.repository();
+
+    // ONE CARD PER REPOSITORY. The service already answers one entry per repository, so this is a
+    // guard rather than a fold — but a duplicate would put two cards under one name, and the second
+    // of them would collect the edges the first had already claimed.
+    const byDepth = new Map<number, AdopterDto[]>();
+    const claimed = new Set<string>([rootName]);
+    for (const adopter of adopters) {
+      if (!adopter.repository || claimed.has(adopter.repository)) {
+        continue;
+      }
+      claimed.add(adopter.repository);
+      // A depth the service never sends — zero, or negative — would land a card on top of the
+      // release itself, which is the one column that is not an adopter's.
+      const depth = Math.max(1, adopter.depth);
+      const at = byDepth.get(depth);
       if (at) {
         at.push(adopter);
       } else {
-        groups.set(adopter.depth, [adopter]);
+        byDepth.set(depth, [adopter]);
       }
     }
-    const rows: JourneyRow[] = [];
-    for (const [depth, adopters] of groups) {
-      rows.push({
-        kind: 'depth',
+
+    const depths = Array.from(byDepth.keys()).sort((left, right) => left - right);
+
+    const rowOf = new Map<string, number>([[rootName, 0]]);
+    const columnOf = new Map<string, number>([[rootName, 0]]);
+    const placed: {
+      readonly adopter: AdopterDto;
+      readonly column: number;
+      readonly row: number;
+    }[] = [];
+    const columns: ChartColumn[] = [
+      { key: 'depth-0', depth: 0, x: columnX(0), label: this.depthLabel(0), summary: '' },
+    ];
+
+    depths.forEach((depth, index) => {
+      const column = index + 1;
+      const at = byDepth.get(depth) ?? [];
+      const ordered = at
+        .map((adopter) => ({ adopter, order: this.orderOf(adopter, rowOf) }))
+        .sort(
+          (left, right) =>
+            left.order - right.order ||
+            left.adopter.repository.localeCompare(right.adopter.repository),
+        );
+      ordered.forEach(({ adopter }, row) => {
+        rowOf.set(adopter.repository, row);
+        columnOf.set(adopter.repository, column);
+        placed.push({ adopter, column, row });
+      });
+      columns.push({
         key: `depth-${depth}`,
         depth,
-        total: adopters.length,
-        adopted: adopters.filter((adopter) => adopter.state === 'ADOPTED').length,
+        x: columnX(column),
+        label: this.depthLabel(depth),
+        summary: `${at.filter((adopter) => adopter.state === 'ADOPTED').length}/${at.length} carrying it`,
       });
-      for (const adopter of adopters) {
-        rows.push({
-          kind: 'adopter',
-          key: `${depth}|${adopter.repository}`,
-          adopter,
-          linkable: !!adopter.repositoryStatus,
-          note: this.noteFor(adopter),
+    });
+
+    const edges: ChartEdge[] = [];
+    const parentsOf = new Map<string, string[]>();
+    for (const { adopter, column, row } of placed) {
+      const parents: string[] = [];
+      // A depth-1 card hangs off the release whatever `via` says. The service does name the root
+      // there, but the fallback costs nothing and the alternative is a first column of orphans.
+      const candidates = adopter.depth <= 1 ? [rootName, ...adopter.via] : adopter.via;
+      for (const parent of candidates) {
+        const parentColumn = columnOf.get(parent);
+        if (
+          parentColumn === undefined ||
+          parent === adopter.repository ||
+          parents.includes(parent)
+        ) {
+          continue;
+        }
+        parents.push(parent);
+        edges.push({
+          key: `${parent}->${adopter.repository}`,
+          from: parent,
+          to: adopter.repository,
+          path: edgePath(
+            columnX(parentColumn) + CARD_WIDTH,
+            rowY(rowOf.get(parent) ?? 0) + CARD_HEIGHT / 2,
+            columnX(column),
+            rowY(row) + CARD_HEIGHT / 2,
+          ),
+          adopted: adopter.state === 'ADOPTED',
         });
       }
+      parentsOf.set(adopter.repository, parents);
     }
-    return rows;
+
+    const nodes: ChartNode[] = [
+      {
+        key: `0|${rootName}`,
+        repository: rootName,
+        column: 0,
+        row: 0,
+        x: columnX(0),
+        y: rowY(0),
+        root: true,
+        linkable: true,
+        absent: false,
+        archetype: '',
+        state: null,
+        adopted: false,
+        version: this.journey()?.version || this.version(),
+        note: '',
+        adoptedAt: null,
+        reachedFrom: '',
+      },
+      ...placed.map(({ adopter, column, row }) => ({
+        key: `${column}|${adopter.repository}`,
+        repository: adopter.repository,
+        column,
+        row,
+        x: columnX(column),
+        y: rowY(row),
+        root: false,
+        linkable: !!adopter.repositoryStatus,
+        absent: adopter.repositoryStatus === 'ABSENT',
+        archetype: adopter.archetype || NONE,
+        state: adopter.state,
+        adopted: adopter.state === 'ADOPTED',
+        version: adopter.adoptedVersion ?? NONE,
+        note: this.noteFor(adopter),
+        adoptedAt: adopter.adoptedAt,
+        reachedFrom: (parentsOf.get(adopter.repository) ?? []).join(', '),
+      })),
+    ];
+
+    // The tallest column decides the height, and the root column is one card tall, so the floor of
+    // one keeps a chart with a single lonely adopter from computing a negative box.
+    const tallest = Math.max(1, ...depths.map((depth) => byDepth.get(depth)?.length ?? 0));
+    return {
+      columns,
+      nodes,
+      edges,
+      width: columnX(columns.length - 1) + CARD_WIDTH,
+      height: rowY(tallest - 1) + CARD_HEIGHT,
+    };
   });
 
   constructor() {
@@ -202,12 +449,15 @@ export class AdoptionPage {
     return formatRelative(iso, this.now());
   }
 
-  /** How far away a group of rows is, in words rather than in a number to decode. */
+  /**
+   * How far away a column is, in words rather than in a number to decode.
+   *
+   * Short, because it is a column header now and not a full-width band: the sentence the table
+   * carried — "reached through the repositories above" — is what the edges themselves say, and the
+   * position of the column says the rest.
+   */
   protected depthLabel(depth: number): string {
-    if (depth <= 1) {
-      return 'Directly downstream — these pin what this release published';
-    }
-    return `${depth} hops downstream — reached through the repositories above`;
+    return depth === 0 ? 'This release' : `${plural(depth, 'hop')} downstream`;
   }
 
   /** One read: the whole journey, which is all this page ever asks for. */
@@ -226,20 +476,44 @@ export class AdoptionPage {
   }
 
   /**
-   * What one row did, or what it is waiting behind.
+   * Where a card wants to sit in its column: level with the parents that feed it.
    *
-   * An adopted row names the release of ITS OWN that first carried a new-enough copy of the
-   * subject; a pending one names the repositories the trace came through, because that is where the
-   * wait actually is — a repository two hops down cannot take this release until the one above it
-   * has released with it. A pending row at depth 1 is waiting on nothing but its own next release,
-   * and says so.
+   * The mean of the parents' rows, which keeps an edge as close to horizontal as the column allows
+   * and puts a card with two parents between them rather than above or below both. A card whose
+   * parents this answer does not contain sorts to the end — there is nothing to be level with, and
+   * the alternative, treating "no parents" as row zero, would put an unexplained card at the top of
+   * the column ahead of everything the release actually reached.
+   */
+  private orderOf(adopter: AdopterDto, rowOf: ReadonlyMap<string, number>): number {
+    const rows: number[] = [];
+    if (adopter.depth <= 1) {
+      rows.push(0);
+    }
+    for (const parent of adopter.via) {
+      const row = rowOf.get(parent);
+      if (row !== undefined) {
+        rows.push(row);
+      }
+    }
+    if (rows.length === 0) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+    return rows.reduce((total, row) => total + row, 0) / rows.length;
+  }
+
+  /**
+   * What a pending card is still waiting for, or nothing at all.
+   *
+   * An adopted card says its version and its moment in the two fields under the badge, so it needs
+   * no sentence. A pending card one hop out is waiting on nothing but its own next release and says
+   * exactly that — there is no edge in but the release's own. A deeper one is waiting on the cards
+   * its edges come from, which the drawing already shows; repeating it in words is what the old
+   * "waiting behind a → b" did, and that sentence was also wrong about the order.
    */
   private noteFor(adopter: AdopterDto): string {
     if (adopter.state === 'ADOPTED') {
-      return adopter.adoptedVersion ?? NONE;
+      return '';
     }
-    return adopter.via.length > 0
-      ? `waiting behind ${adopter.via.join(' → ')}`
-      : 'has not released with it yet';
+    return adopter.depth <= 1 ? 'has not released with it yet' : 'waiting';
   }
 }

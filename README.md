@@ -25,10 +25,13 @@ by different readers: internal is release work, external is patching.
   with `Create branch now`, and the bumps it has had.
 - **`/bumps/<id>`** — one bump: the branch, the changes sent, the CI run, and what the release ask
   answered.
-- **`/adoption/<repository>/<version>`** — one release, and how far it has travelled: every
-  repository downstream of it, grouped by how many hops away it is, each one either carrying the
-  version — with the release of its own that first did — or waiting, with what it waits behind. See
-  below.
+- **`/adoption/<repository>/<version>`** — one release, and how far it has travelled, as a
+  left-to-right flowchart: the release is the card in the first column, each column after it is one
+  hop further downstream, and an arrow is one repository reaching another. Every repository is one
+  card no matter how many paths reach it, with an arrow in from each of them, because that is the
+  shape the answer has — a graph, not a tree. A card either carries the version, with the release of
+  its own that first did and when, or is waiting; a deep card needs no sentence about what it waits
+  behind, because the arrows into it say so. Deep chains scroll sideways. See below.
 - **`/`** redirects to `/internal`, **`/dependencies`** — the search's address when there was only
   one of them — redirects to `/internal/dependencies` with its query parameters intact, and
   **`/trains/by-release/<repository>/<version>`** — the address a release link landed on while the
@@ -142,9 +145,11 @@ Eleven things the JSON shape alone does not say, and which these pages depend on
 - **`repositoryStatus: "ABSENT"` means the repository left the catalog.** It will never take the
   release, and the row says so, because a journey waiting on it silently would look stuck for no
   visible reason.
-- **`depth` and `via` are how a row is read.** Depth 1 pins what the release published; deeper rows
-  were reached through the repositories `via` names, one per hop, and a pending one is waiting on
-  those rather than on this release.
+- **`depth` and `via` are how an adopter is read, and `via` is the PARENTS rather than a path.**
+  Depth 1 pins what the release published; a deeper adopter was reached from every repository `via`
+  names, all of which sit at `depth - 1` — several of them when two upstreams both lead there — and
+  a pending one is waiting on those rather than on this release. Reading `via` as a chain from the
+  release was the mistake the old table made, and it is what the flowchart's edges replace.
 - **`GET /adoption/by-release` has no 404.** The answer is derived from the dependency graph rather
   than from a record that a release was tracked, so a release this service has never seen answers
   with empty `packages` and a wholly pending closure — which the page says in a sentence. A
