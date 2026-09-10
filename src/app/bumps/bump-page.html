@@ -87,6 +87,28 @@
         {{ none }}
       }
     </dd>
+
+    @if (current.releaseState; as state) {
+      <!-- WHY A REPOSITORY CAN BE PENDING WITH NOTHING BEING BUILT. The bump ended, the branch is
+           pushed, and main does not move until the release lands — so the dispatcher holds this
+           repository and sends nothing. A state that is not PENDING/READY/RELEASED is a release
+           that is not coming, which is the one thing this screen could not say before. -->
+      <dt>Release</dt>
+      <dd>
+        <span [class.page-error]="stopped()">{{ state }}</span>
+        @if (current.releaseDetail; as detail) {
+          <span class="subtle">— {{ detail }}</span>
+        }
+        @if (stopped()) {
+          <p class="subtle">
+            Nothing is coming from that request as it stands, so this repository is not waited on and
+            is not bumped again — its branch already carries these changes. Push the fix, or the
+            release it is folded with, and the next window picks it up.
+          </p>
+        }
+        <p class="subtle">read {{ instant(current.releaseStateAt ?? null) }}</p>
+      </dd>
+    }
   </dl>
 
   @if (current.message) {

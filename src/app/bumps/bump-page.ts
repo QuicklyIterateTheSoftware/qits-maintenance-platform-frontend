@@ -13,7 +13,13 @@ import { ActivatedRoute, RouterLink, convertToParamMap } from '@angular/router';
 import { QitsAppLinks } from '@qits/ui-components';
 import { MaintenanceApi } from '../api/maintenance-api';
 import { injectScopedProject } from '../nav/scoped-project';
-import { bumpBranch, isBumpTerminal, releaseSentinel, type BumpDto } from '../api/dto';
+import {
+  bumpBranch,
+  isBumpTerminal,
+  releaseSentinel,
+  releaseStopped,
+  type BumpDto,
+} from '../api/dto';
 import { Async } from '../ui/async';
 import { Empty } from '../ui/empty';
 import { NONE, formatDuration, formatInstant, plural } from '../ui/format';
@@ -100,6 +106,15 @@ export class BumpPage {
    * hold on to, or the ask was refused — and neither of them is something to link to.
    */
   protected readonly sentinel = computed(() => releaseSentinel(this.bump()?.releaseRequestId));
+
+  /**
+   * Whether the release this bump asked for has stopped happening.
+   *
+   * REJECTED, FAILED, CONFLICTED and WITHDRAWN all mean the same thing to a reader of this page:
+   * main is not going to move, so the repository stays pending and the nightly dispatcher has taken
+   * it out of the chain rather than sending a bump that could only answer NOTHING_TO_DO.
+   */
+  protected readonly stopped = computed(() => releaseStopped(this.bump()?.releaseState));
 
   /**
    * The run in qits-ci's own frontend, as the platform's navigation addresses it.

@@ -301,6 +301,25 @@ export interface BumpDto {
   readonly finishedAt: string | null;
   readonly message: string | null;
   readonly releaseRequestId: string | null;
+  /**
+   * What qits-projects last said about that request — `PENDING`, `READY`, `RELEASED`, `REJECTED`,
+   * `FAILED`, `CONFLICTED`, `WITHDRAWN` — or null on a bump nothing has asked about.
+   *
+   * **It is why a repository can be pending with nothing being built.** A bump writes a branch and
+   * main does not move until the release lands, so the dispatcher holds the repository until it
+   * does; a request that was REJECTED is one that is never landing, and until this field existed
+   * that was invisible from every screen.
+   */
+  readonly releaseState?: string | null;
+  /** qits-projects' own sentence about it — usually the gating run that went red. */
+  readonly releaseDetail?: string | null;
+  /** When the two above were read. */
+  readonly releaseStateAt?: string | null;
+}
+
+/** Whether a release state means nothing is coming from that request as it stands. */
+export function releaseStopped(state: string | null | undefined): boolean {
+  return !!state && !['PENDING', 'READY', 'RELEASED'].includes(state);
 }
 
 /** No request id came back, or the branch was gone before the ask could be made. */
